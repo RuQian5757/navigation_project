@@ -1,0 +1,22 @@
+# Build outputs
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/Makefile
+/*.ilk
+/*.pdb
+/*.obj
+/*.o
+/*.so
+/*.exe
+/*.dll
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode/
+*.swp
