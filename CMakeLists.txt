@@ -9,14 +9,24 @@ find_package(Threads REQUIRED)
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-add_executable(navigation_node
-    src/main.cpp
+add_library(navigation_octree STATIC
     src/octree_manager.cpp
 )
 
-target_link_libraries(navigation_node PRIVATE Threads::Threads)
+target_link_libraries(navigation_octree PRIVATE Threads::Threads)
 
-# Future dependencies:
-# find_package(ONNXRuntime REQUIRED)
-# find_package(PCL REQUIRED)
-# target_link_libraries(navigation_node PRIVATE ${ONNXRuntime_LIBRARIES} ${PCL_LIBRARIES})
+target_include_directories(navigation_octree PUBLIC ${PROJECT_SOURCE_DIR}/include)
+
+add_executable(navigation_node
+    src/main.cpp
+)
+
+target_link_libraries(navigation_node PRIVATE navigation_octree)
+
+add_executable(test_octree
+    tests/test_octree.cpp
+)
+
+target_link_libraries(test_octree PRIVATE navigation_octree)
+
+add_custom_target(check COMMAND test_octree)
