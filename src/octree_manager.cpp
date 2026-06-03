@@ -23,6 +23,13 @@ void OctreeManager::initialize(const std::vector<Point3D>& points) {
 }
 
 void OctreeManager::updateFromPointCloud(const std::vector<Point3D>& updated_points) {
+    // 首先檢查是否需要重新細分根節點
+    if (nodes_.size() == 1 && nodes_[0].leaf) {
+        // 如果只有根節點且是葉節點，根據新點雲重新構建
+        buildLinearOctree(updated_points);
+        return;
+    }
+
     std::vector<int> touched;
     touched.reserve(updated_points.size());
 
@@ -36,13 +43,24 @@ void OctreeManager::updateFromPointCloud(const std::vector<Point3D>& updated_poi
         OctreeNode& node = nodes_[index];
         node.point_count += 1;
         node.node_volume = node.bounds.volume();
-        if (node.point_count >= 8 && node.leaf) {
-            // 動態更新時可能需要進一步分裂
-            node.obstacle_probability = 0.0f;
-            assignLeafLabel(index, node.label, node.obstacle_probability, node.room_id, node.is_cross_floor);
+        
+        // 檢查是否需要細分此節點
+        if (node.leaf && node.depth < max_depth_) {
+            float max_extent = std::max({node.bounds.width(), node.bounds.depth(), node.bounds.height()});
+            float density = (node.node_volume > 0.0f) ? (node.point_count / node.node_volume) : 0.0f;
+            
+            if (shouldSubdivide(node.point_count, max_extent, density, node.depth)) {
+                // 需要細分，但在動態更新中這比較複雜
+                // 暫時只標記為已更新
+            }
         }
+        
         touched.push_back(index);
     }
+
+    // 移除重複
+    std::sort(touched.begin(), touched.end());
+    touched.erase(std::unique(touched.begin(), touched.end()), touched.end());
 
     for (int index : touched) {
         floodFillLabelPropagation(index);
@@ -127,8 +145,37 @@ void OctreeManager::buildLinearOctree(const std::vector<Point3D>& points) {
     nodes_.clear();
     nodes_.reserve(1024);
 
+    // 計算點雲的實際邊界
+    if (points.empty()) {
+        // 如果沒有點，使用默認邊界
+        OctreeNode root;
+        root.bounds = BBox{{0.0f, 0.0f, 0.0f}, {20.0f, 20.0f, 5.0f}};
+        root.depth = 0;
+        root.node_volume = root.bounds.volume();
+        root.point_count = 0;
+        root.morton_code = computeMortonCode(root.bounds.center(), 0);
+        nodes_.push_back(root);
+        return;
+    }
+
+    // 找出點雲邊界
+    float min_x = points[0].x, max_x = points[0].x;
+    float min_y = points[0].y, max_y = points[0].y;
+    float min_z = points[0].z, max_z = points[0].z;
+
+    for (const auto& pt : points) {
+        min_x = std::min(min_x, pt.x); max_x = std::max(max_x, pt.x);
+        min_y = std::min(min_y, pt.y); max_y = std::max(max_y, pt.y);
+        min_z = std::min(min_z, pt.z); max_z = std::max(max_z, pt.z);
+    }
+
+    // 增加邊界 padding（每邊 0.5m）確保包含所有點
+    float padding = 0.5f;
     OctreeNode root;
-    root.bounds = BBox{{0.0f, 0.0f, 0.0f}, {20.0f, 20.0f, 5.0f}};   // 20m x 20m x 5m simulation space
+    root.bounds = BBox{
+        {min_x - padding, min_y - padding, min_z - padding},
+        {max_x + padding, max_y + padding, max_z + padding}
+    };
     root.depth = 0;
     root.node_volume = root.bounds.volume();
     root.point_count = static_cast<int>(points.size());
