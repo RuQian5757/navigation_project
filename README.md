@@ -33,3 +33,30 @@ make
 ```bash
 ./navigation_node
 ```
+
+## 即時 3D 點雲顯示
+
+專案已提供一個簡單的即時 PyVista 3D viewer，結合 C++ bridge 與 Python client，將 Gazebo 點雲直接顯示為彩色 3D 點雲。
+
+1. 在 build 目錄啟動 C++ bridge：
+
+```bash
+cd build
+./pointcloud_bridge
+```
+
+2. 在專案根目錄啟動 Python viewer：
+
+```bash
+cd /home/ruilun/project/navigation_project
+source venv/bin/activate
+python3 scripts/visualize_pointcloud_realtime.py
+```
+
+3. 若尚未安裝 PyVista：
+
+```bash
+pip install pyvista numpy
+```
+
+如果 Gazebo sensor 正常輸出 point cloud，這個 viewer 應該會即時呈現當前場景的 3D 點雲分佈。
