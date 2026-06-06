@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <sdf version="1.11">
-  <model name="floor_base">
+  <model name="wall_2x0.15x3">
     <static>true</static>
     <link name="body">
       <inertial>
@@ -18,14 +18,14 @@
         <density>10.0</density>
         <geometry>
           <mesh optimization="convex_decomposition">
-            <uri>models://floor_base/mesh.stl</uri>
+            <uri>models://wall_2x0.15x3/mesh.stl</uri>
           </mesh>
         </geometry>
       </collision>
       <visual name="visual">
         <geometry>
           <mesh>
-            <uri>models://floor_base/mesh.stl</uri>
+            <uri>models://wall_2x0.15x3/mesh.stl</uri>
           </mesh>
         </geometry>
           <material>

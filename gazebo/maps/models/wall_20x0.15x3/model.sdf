@@ -1,20 +1,31 @@
 <?xml version="1.0"?>
 <sdf version="1.11">
-  <model name="floor_1stair">
+  <model name="wall_20x0.15x3">
+    <static>true</static>
     <link name="body">
-      <inertial auto="true" />
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>1.0</ixx>
+          <iyy>1.0</iyy>
+          <izz>1.0</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
       <collision name="collision">
         <density>10.0</density>
         <geometry>
           <mesh optimization="convex_decomposition">
-            <uri>models://floor_1stair/mesh.stl</uri>
+            <uri>models://wall_20x0.15x3/mesh.stl</uri>
           </mesh>
         </geometry>
       </collision>
       <visual name="visual">
         <geometry>
           <mesh>
-            <uri>models://floor_1stair/mesh.stl</uri>
+            <uri>models://wall_20x0.15x3/mesh.stl</uri>
           </mesh>
         </geometry>
           <material>

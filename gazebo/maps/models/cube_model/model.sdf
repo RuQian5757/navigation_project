@@ -1,8 +1,19 @@
 <?xml version="1.0"?>
 <sdf version="1.11">
   <model name="cube_model">
+    <static>true</static>
     <link name="body">
-      <inertial auto="true" />
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>1.0</ixx>
+          <iyy>1.0</iyy>
+          <izz>1.0</izz>
+          <ixy>0.0</ixy>
+          <ixz>0.0</ixz>
+          <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
       <collision name="collision">
         <density>10.0</density>
         <geometry>
