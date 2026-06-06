@@ -48,6 +48,101 @@ std::vector<PointCloudSample> toSamples(const std::vector<Point3D>& points) {
     return samples;
 }
 
+using Matrix3 = std::array<std::array<float, 3>, 3>;
+
+Matrix3 identityMatrix3() {
+    return Matrix3{{
+        {{1.0f, 0.0f, 0.0f}},
+        {{0.0f, 1.0f, 0.0f}},
+        {{0.0f, 0.0f, 1.0f}},
+    }};
+}
+
+struct EigenDecomposition3 {
+    std::array<float, 3> values = {0.0f, 0.0f, 0.0f};
+    Matrix3 vectors = identityMatrix3();
+};
+
+EigenDecomposition3 jacobiEigenDecomposition(Matrix3 matrix) {
+    EigenDecomposition3 result;
+    Matrix3 vectors = identityMatrix3();
+
+    for (int iter = 0; iter < 24; ++iter) {
+        int p = 0;
+        int q = 1;
+        float max_offdiag = std::abs(matrix[0][1]);
+        if (std::abs(matrix[0][2]) > max_offdiag) {
+            p = 0;
+            q = 2;
+            max_offdiag = std::abs(matrix[0][2]);
+        }
+        if (std::abs(matrix[1][2]) > max_offdiag) {
+            p = 1;
+            q = 2;
+            max_offdiag = std::abs(matrix[1][2]);
+        }
+
+        if (max_offdiag < 1e-8f) {
+            break;
+        }
+
+        const float app = matrix[p][p];
+        const float aqq = matrix[q][q];
+        const float apq = matrix[p][q];
+        const float angle = 0.5f * std::atan2(2.0f * apq, aqq - app);
+        const float c = std::cos(angle);
+        const float s = std::sin(angle);
+
+        for (int k = 0; k < 3; ++k) {
+            if (k == p || k == q) {
+                continue;
+            }
+            const float akp = matrix[k][p];
+            const float akq = matrix[k][q];
+            matrix[k][p] = c * akp - s * akq;
+            matrix[p][k] = matrix[k][p];
+            matrix[k][q] = s * akp + c * akq;
+            matrix[q][k] = matrix[k][q];
+        }
+
+        matrix[p][p] = c * c * app - 2.0f * s * c * apq + s * s * aqq;
+        matrix[q][q] = s * s * app + 2.0f * s * c * apq + c * c * aqq;
+        matrix[p][q] = 0.0f;
+        matrix[q][p] = 0.0f;
+
+        for (int k = 0; k < 3; ++k) {
+            const float vip = vectors[k][p];
+            const float viq = vectors[k][q];
+            vectors[k][p] = c * vip - s * viq;
+            vectors[k][q] = s * vip + c * viq;
+        }
+    }
+
+    std::array<int, 3> order = {0, 1, 2};
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        return matrix[a][a] < matrix[b][b];
+    });
+
+    Matrix3 sorted_vectors{};
+    for (int sorted = 0; sorted < 3; ++sorted) {
+        const int original = order[sorted];
+        result.values[sorted] = std::max(0.0f, matrix[original][original]);
+        for (int row = 0; row < 3; ++row) {
+            sorted_vectors[row][sorted] = vectors[row][original];
+        }
+    }
+    result.vectors = sorted_vectors;
+    return result;
+}
+
+Point3D normalizedVector(float x, float y, float z) {
+    const float norm = std::sqrt(x * x + y * y + z * z);
+    if (norm < 1e-8f) {
+        return {};
+    }
+    return {x / norm, y / norm, z / norm};
+}
+
 } // namespace
 
 OctreeManager::OctreeManager(int max_depth)
@@ -306,6 +401,7 @@ void OctreeManager::subdivideNode(int node_index, const std::vector<PointCloudSa
 
     if (!shouldSubdivide(nodes_[node_index], has_stair_semantics)) {
         nodes_[node_index].leaf = true;
+        computeLeafGeometryStats(node_index, samples);
         return;
     }
 
@@ -635,6 +731,88 @@ void OctreeManager::aggregateSampleSemantics(int node_index, const std::vector<P
         }
     }
     node.room_id = best_room;
+}
+
+void OctreeManager::computeLeafGeometryStats(int node_index, const std::vector<PointCloudSample>& samples) {
+    if (node_index < 0 || node_index >= static_cast<int>(nodes_.size())) {
+        return;
+    }
+
+    OctreeNode& node = nodes_[node_index];
+    node.centroid = node.bounds.center();
+    node.avg_normal = {};
+    node.covariance_eigenvalues = {0.0f, 0.0f, 0.0f};
+    node.linearity = 0.0f;
+    node.flatness = 0.0f;
+    node.roughness = 0.0f;
+    node.curvature = 0.0f;
+
+    if (samples.empty()) {
+        return;
+    }
+
+    Point3D centroid;
+    for (const PointCloudSample& sample : samples) {
+        centroid.x += sample.point.x;
+        centroid.y += sample.point.y;
+        centroid.z += sample.point.z;
+    }
+    const float inv_count = 1.0f / static_cast<float>(samples.size());
+    centroid.x *= inv_count;
+    centroid.y *= inv_count;
+    centroid.z *= inv_count;
+    node.centroid = centroid;
+
+    if (samples.size() < 3) {
+        return;
+    }
+
+    Matrix3 covariance{};
+    for (const PointCloudSample& sample : samples) {
+        const float x = sample.point.x - centroid.x;
+        const float y = sample.point.y - centroid.y;
+        const float z = sample.point.z - centroid.z;
+        covariance[0][0] += x * x;
+        covariance[0][1] += x * y;
+        covariance[0][2] += x * z;
+        covariance[1][1] += y * y;
+        covariance[1][2] += y * z;
+        covariance[2][2] += z * z;
+    }
+    covariance[1][0] = covariance[0][1];
+    covariance[2][0] = covariance[0][2];
+    covariance[2][1] = covariance[1][2];
+
+    for (auto& row : covariance) {
+        for (float& value : row) {
+            value *= inv_count;
+        }
+    }
+
+    const EigenDecomposition3 eigen = jacobiEigenDecomposition(covariance);
+    node.covariance_eigenvalues = eigen.values;
+
+    Point3D normal = normalizedVector(eigen.vectors[0][0], eigen.vectors[1][0], eigen.vectors[2][0]);
+    if (normal.z < 0.0f) {
+        normal.x *= -1.0f;
+        normal.y *= -1.0f;
+        normal.z *= -1.0f;
+    }
+    node.avg_normal = normal;
+
+    const float lambda0 = eigen.values[0];
+    const float lambda1 = eigen.values[1];
+    const float lambda2 = eigen.values[2];
+    const float lambda_sum = lambda0 + lambda1 + lambda2;
+    if (lambda_sum < 1e-8f || lambda2 < 1e-8f) {
+        node.avg_normal = {};
+        return;
+    }
+
+    node.linearity = clampFloat((lambda2 - lambda1) / lambda2, 0.0f, 1.0f);
+    node.flatness = clampFloat((lambda1 - lambda0) / lambda2, 0.0f, 1.0f);
+    node.roughness = clampFloat(lambda0 / lambda2, 0.0f, 1.0f);
+    node.curvature = clampFloat(lambda0 / lambda_sum, 0.0f, 1.0f);
 }
 
 bool OctreeManager::canTraverseBetween(const OctreeNode& from, const OctreeNode& to, NeighborDirection dir) const {

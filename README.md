@@ -7,6 +7,7 @@
 - Gazebo Sim 內產生室內場景 ground-truth 3D 點雲
 - 透過 Gazebo Transport 發布 `/world/dynamic_cloud`
 - C++ `OctreeManager` 建立導航用 Linear Octree
+- Headless feature exporter 輸出 leaf voxel CSV 給 Random Forest 訓練
 - PCLVisualizer 即時顯示 Octree voxel 切割結果
 - 後續可接 ML label、room id、cross-floor edge、A* cost
 
@@ -20,13 +21,17 @@
 
 ```text
 include/octree_manager.h              Octree API 與資料結構
+include/leaf_feature_exporter.h       Leaf feature CSV export API
 src/octree_manager.cpp                Octree 核心實作
+src/leaf_feature_exporter.cpp         Random Forest leaf feature 輸出
+src/gazebo_leaf_feature_exporter.cpp  Gazebo topic -> Octree -> CSV
 tests/test_octree.cpp                 Octree 單元測試
 dynamic_world_cloud/                  Gazebo system plugin
 gazebo/maps/warehouse_world.sdf       測試用室內倉庫世界
 scripts/visualize_octree_gazebo.cpp   即時 Gazebo Octree viewer
 scripts/visualize_pointcloud_realtime.py Python 即時點雲 viewer
 scripts/run_visualization.sh          Octree / pointcloud 共用啟動腳本
+scripts/run_feature_export.sh         Gazebo leaf feature CSV 輸出腳本
 docs/                                 設計與操作文件
 ```
 
@@ -54,6 +59,7 @@ cmake -S . -B build
 cmake --build build --target navigation_octree
 cmake --build build --target test_octree
 cmake --build build --target dynamic_world_cloud
+cmake --build build --target leaf_feature_exporter_gazebo
 ```
 
 Octree viewer：
@@ -83,6 +89,18 @@ Terminal 2：啟動即時 Octree 視覺化。
 ./scripts/run_visualization.sh octree
 ```
 
+Terminal 2 也可以改成輸出 Random Forest 訓練 CSV，不需要開 viewer：
+
+```bash
+./scripts/run_feature_export.sh
+```
+
+預設會訂閱 `/world/dynamic_cloud`，每秒最多重建一次 Octree，並輸出：
+
+```text
+data/leaf_features.csv
+```
+
 如果畫面太卡，改用較輕量模式：
 
 ```bash
@@ -110,8 +128,10 @@ Plugin 會：
 3. 將 local cloud cache 起來。
 4. 在 `PostUpdate()` 依照 `update_rate` 轉成 world coordinates。
 5. 發布 `gz::msgs::PointCloudPacked` 到 `/world/dynamic_cloud`。
-6. Viewer 訂閱 topic，轉成 `std::vector<navigation::Point3D>`。
-7. `OctreeManager` 建立 Octree 並交給 PCLVisualizer 顯示。
+6. `leaf_feature_exporter_gazebo` 可訂閱 topic，轉成 `std::vector<navigation::Point3D>`。
+7. `OctreeManager` 建立 Octree，計算 leaf PCA / normal / density 等特徵。
+8. `leaf_feature_exporter` 將 leaf features 輸出成 CSV。
+9. Viewer 也可同時訂閱同一個 topic，獨立負責 PCLVisualizer 顯示。
 
 ## 常用視覺化模式
 
@@ -161,11 +181,23 @@ Viewer 參數：
 - `--no-points`：不顯示原始白色點雲。
 - `--label-color`：用語義 label 上色，而不是 Octree depth。
 
+Feature exporter 參數：
+
+- `--partition`：Gazebo Transport partition，需和 Gazebo 相同。
+- `--topic`：訂閱 topic，預設 `/world/dynamic_cloud`。
+- `--output`：CSV 輸出路徑，預設 `data/leaf_features.csv`。
+- `--max-depth`：特徵輸出使用的 Octree 最大深度。
+- `--max-points`：每次輸出最多使用多少收到的點。
+- `--export-hz`：每秒最多重建 Octree 並輸出 CSV 幾次。
+- `--once`：收到第一包點雲後輸出一次就結束。
+- `--timestamped`：每次輸出成獨立檔案，不覆蓋前一份 CSV。
+
 一般操作建議優先改 [scripts/run_visualization.sh](scripts/run_visualization.sh) 上方的參數設定區，或用環境變數覆寫，例如：
 
 ```bash
 OCTREE_MAX_VOXELS=1000 ./scripts/run_visualization.sh octree
 POINTCLOUD_POINT_SIZE=2 ./scripts/run_visualization.sh pointcloud
+FEATURE_EXPORT_HZ=0.5 FEATURE_TIMESTAMPED=1 ./scripts/run_feature_export.sh
 ```
 
 ## 狀態與後續工作
@@ -175,10 +207,13 @@ POINTCLOUD_POINT_SIZE=2 ./scripts/run_visualization.sh pointcloud
 - Gazebo collision geometry ground-truth cloud plugin
 - `/world/dynamic_cloud` Gazebo Transport 資料流
 - Linear Octree 與 adaptive voxel sizing
+- Leaf PCA / avg_normal / Random Forest feature CSV export
+- Gazebo topic headless feature exporter
 - PCL 即時 Octree 視覺化
 
 後續可擴充：
 
+- 將 `python/train_model.py` 接上 `data/leaf_features.csv`
 - 將 ML 模型輸出接到 `PointCloudSample` / `MLResult`
 - 自動 room id 標記
 - 樓梯區域 semantic label 與 cross-floor edge

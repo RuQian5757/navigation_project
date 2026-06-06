@@ -18,6 +18,10 @@ __pycache__/
 *.pyd
 /venv/
 
+# Generated datasets / simulation captures
+/data/
+/pcd/
+
 # IDE
 .vscode/
 *.swp

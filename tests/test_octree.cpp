@@ -1,7 +1,10 @@
 #include "octree_manager.h"
+#include "leaf_feature_exporter.h"
 
 #include <cassert>
+#include <fstream>
 #include <iostream>
+#include <string>
 
 using namespace navigation;
 
@@ -142,6 +145,73 @@ void testDynamicIncrementalUpdateWithML() {
     assert(octree.computeTraversalCost(leaf.value()) > 1.0f);
 }
 
+void testLeafFeatureCSVExport() {
+    LeafNode leaf;
+    leaf.min[0] = 0.0f;
+    leaf.min[1] = 0.0f;
+    leaf.min[2] = 0.0f;
+    leaf.max[0] = 0.5f;
+    leaf.max[1] = 0.5f;
+    leaf.max[2] = 0.5f;
+    leaf.morton_code = 42;
+    leaf.depth = 3;
+    leaf.num_points = 12;
+    leaf.avg_normal[0] = 0.0f;
+    leaf.avg_normal[1] = 0.0f;
+    leaf.avg_normal[2] = 1.0f;
+    leaf.center[0] = 0.25f;
+    leaf.center[1] = 0.25f;
+    leaf.center[2] = 0.25f;
+    leaf.size = 0.5f;
+    leaf.label = static_cast<int>(VoxelLabel::Free);
+    leaf.obstacle_probability = 0.1f;
+
+    const std::string path = "/tmp/navigation_octree_features_test.csv";
+    exportLeafFeaturesToCSV(std::vector<LeafNode>{leaf}, path);
+
+    std::ifstream in(path);
+    assert(in.good());
+    std::string header;
+    std::string row;
+    std::getline(in, header);
+    std::getline(in, row);
+    assert(header.find("num_points,voxel_volume,density") == 0);
+    assert(header.rfind("label,obstacle_probability") != std::string::npos);
+    assert(!row.empty());
+}
+
+void testLeafPcaGeometryStats() {
+    std::vector<Point3D> points = {
+        {0.0f, 0.0f, 1.0f},
+        {1.0f, 0.0f, 1.0f},
+        {0.0f, 1.0f, 1.0f},
+        {1.0f, 1.0f, 1.0f},
+        {0.5f, 0.5f, 1.0f},
+    };
+
+    OctreeConfig config;
+    config.max_depth = 0;
+    OctreeManager octree(config);
+    octree.initialize(points);
+
+    assert(octree.getLeafCount() == 1);
+    const OctreeNode* root = octree.getNode(0);
+    assert(root != nullptr);
+    assert(root->leaf);
+    assert(root->avg_normal.z > 0.9f);
+    assert(root->flatness > 0.8f);
+    assert(root->curvature < 0.05f);
+
+    const std::string path = "/tmp/navigation_octree_node_features_test.csv";
+    exportOctreeLeafFeaturesToCSV(octree.nodes(), path);
+    std::ifstream in(path);
+    assert(in.good());
+    std::string header;
+    std::getline(in, header);
+    assert(header.find("eigenvalue_0") != std::string::npos);
+    assert(header.find("pca_flatness") != std::string::npos);
+}
+
 int main() {
     testAdaptiveSubdivision();
     testLabelPropagation();
@@ -150,6 +220,8 @@ int main() {
     testTraversalCost();
     testSemanticPointCloudInitialization();
     testDynamicIncrementalUpdateWithML();
+    testLeafFeatureCSVExport();
+    testLeafPcaGeometryStats();
     std::cout << "All Octree tests passed." << std::endl;
     return 0;
 }

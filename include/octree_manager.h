@@ -102,6 +102,13 @@ struct OctreeNode {
     int point_count = 0;
     float node_volume = 0.0f;
     float density = 0.0f;
+    Point3D centroid;
+    Point3D avg_normal;
+    std::array<float, 3> covariance_eigenvalues = {0.0f, 0.0f, 0.0f};
+    float linearity = 0.0f;
+    float flatness = 0.0f;
+    float roughness = 0.0f;
+    float curvature = 0.0f;
     bool dynamic = false;
     std::array<int, 8> children;
     std::array<int, NEIGHBOR_COUNT> orthogonal_neighbors;
@@ -156,6 +163,7 @@ private:
     void floodFillLabelPropagation(int start_node);
     void applyMLToLeaves(const std::vector<int>& leaf_indices);
     void aggregateSampleSemantics(int node_index, const std::vector<PointCloudSample>& samples);
+    void computeLeafGeometryStats(int node_index, const std::vector<PointCloudSample>& samples);
     bool canTraverseBetween(const OctreeNode& from, const OctreeNode& to, NeighborDirection dir) const;
     int getChildOctant(const Point3D& point, const BBox& bounds) const;
     Point3D computeOctantCenter(const BBox& bounds, int child_index) const;

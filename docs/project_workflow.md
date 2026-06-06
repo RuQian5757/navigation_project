@@ -5,15 +5,24 @@
 - Gazebo plugin 如何產生點雲
 - 點雲資料如何透過 Gazebo Transport 傳遞
 - Octree 如何接收並切割資料
+- 如何輸出 Random Forest 訓練用 leaf feature CSV
 - 如何執行即時 3D Octree 視覺化
 - 常用參數要如何調整
 
-目前主要資料流如下：
+目前主要資料流分成「訓練資料輸出」與「視覺化展示」兩條，兩者都訂閱同一個 Gazebo topic，互不依賴：
 
 ```text
 warehouse_world.sdf
   -> DynamicWorldCloud Gazebo system plugin
   -> /world/dynamic_cloud, gz::msgs::PointCloudPacked
+
+訓練資料管線:
+  -> src/gazebo_leaf_feature_exporter.cpp
+  -> OctreeManager
+  -> leaf_feature_exporter
+  -> data/leaf_features.csv
+
+視覺化管線:
   -> scripts/visualize_octree_gazebo.cpp
   -> OctreeManager
   -> PCLVisualizer 即時顯示 Octree voxel
@@ -57,6 +66,27 @@ warehouse_world.sdf
 - 支援 leaf voxel label、obstacle probability、room id、cross-floor flag。
 - 支援 6 方向正交鄰居。
 - 提供 A* 可用的 traversal cost 資訊。
+- 建構 leaf 時會根據 leaf 內點集合計算 centroid、avg_normal、covariance eigenvalues、linearity、flatness、roughness、curvature。
+
+### Leaf feature exporter
+
+位置：
+
+- `include/leaf_feature_exporter.h`
+- `src/leaf_feature_exporter.cpp`
+- `src/gazebo_leaf_feature_exporter.cpp`
+- `scripts/run_feature_export.sh`
+
+功能：
+
+- `leaf_feature_exporter.cpp` 將 `OctreeNode` leaf 轉成 Random Forest 訓練用特徵列。
+- `gazebo_leaf_feature_exporter.cpp` 是 headless 資料管線節點，直接訂閱 Gazebo `/world/dynamic_cloud`。
+- 每次收到點雲後，依照 `--export-hz` 節流，將最新點雲轉成 `std::vector<navigation::Point3D>`。
+- 使用 `OctreeManager::initialize(points)` 建立當前 frame 的 Octree。
+- 呼叫 `exportOctreeLeafFeaturesToCSV(octree.nodes(), output_path)` 輸出 CSV。
+- 可以用固定檔名覆蓋輸出，也可以用 `--timestamped` 保留每一個 frame 的 CSV。
+
+這個 exporter 不開啟 PCLVisualizer，也不依賴 Octree 3D 顯示工具。這是目前推薦的資料產生方式，因為訓練資料輸出不應該被 rendering FPS 或視窗互動影響。
 
 ### 即時 Octree viewer
 
@@ -216,13 +246,26 @@ DynamicWorldCloud::PublishPointCloud()
   -> BuildPointCloudMessage()
   -> cloud_pub_.Publish(msg)
   -> /world/dynamic_cloud
+
+訓練資料:
+  -> gazebo_leaf_feature_exporter.cpp callback
+  -> parsePointCloudPacked()
+  -> std::vector<navigation::Point3D>
+  -> OctreeManager::initialize(points)
+  -> exportOctreeLeafFeaturesToCSV()
+  -> data/leaf_features.csv
+
+視覺化:
   -> visualize_octree_gazebo.cpp callback
   -> parsePointCloudPacked()
   -> std::vector<navigation::Point3D>
   -> OctreeManager::initialize(points)
+  -> PCLVisualizer
 ```
 
 Viewer 會根據 `--max-render-points` 對收到的點雲再做一次抽樣，避免大量點雲造成 Octree 重建與 PCL rendering 過慢。
+
+Feature exporter 會根據 `--max-points` 對收到的點雲抽樣，避免訓練資料輸出拖慢 simulation。
 
 ## 5. 建置方式
 
@@ -248,6 +291,7 @@ cmake -S . -B build
 cmake --build build --target navigation_octree
 cmake --build build --target test_octree
 cmake --build build --target dynamic_world_cloud
+cmake --build build --target leaf_feature_exporter_gazebo
 ```
 
 測試 Octree：
@@ -275,6 +319,7 @@ build/octree_viewer/visualize_octree_gazebo
 
 ```bash
 chmod +x scripts/run_visualization.sh
+chmod +x scripts/run_feature_export.sh
 ```
 
 ## 6. 執行流程
@@ -316,7 +361,44 @@ GZ_PARTITION=dynamic_cloud_test gz topic -l
 GZ_PARTITION=dynamic_cloud_test gz topic -i -t /world/dynamic_cloud
 ```
 
-### Terminal 3：啟動即時 Octree 視覺化
+### Terminal 3：輸出 Random Forest leaf feature CSV
+
+推薦讓訓練資料輸出獨立於 viewer 執行：
+
+```bash
+./scripts/run_feature_export.sh
+```
+
+預設設定：
+
+```text
+topic: /world/dynamic_cloud
+partition: dynamic_cloud_test
+output: data/leaf_features.csv
+max_depth: 9
+max_points: 120000
+export_hz: 1
+```
+
+只輸出第一包點雲並結束，適合建立單一訓練樣本：
+
+```bash
+FEATURE_ONCE=1 ./scripts/run_feature_export.sh
+```
+
+每一秒輸出一份帶 frame 編號的 CSV，適合蒐集動態場景資料：
+
+```bash
+FEATURE_TIMESTAMPED=1 FEATURE_EXPORT_HZ=1 ./scripts/run_feature_export.sh
+```
+
+降低負載：
+
+```bash
+FEATURE_MAX_POINTS=50000 FEATURE_EXPORT_HZ=0.5 ./scripts/run_feature_export.sh
+```
+
+### Terminal 4：啟動即時 Octree 視覺化
 
 推薦展示模式：
 
@@ -340,7 +422,7 @@ OCTREE_REBUILD_HZ=0.5 \
 OCTREE_HIDE_POINTS=0 ./scripts/run_visualization.sh octree
 ```
 
-### Terminal 3 可替代方案：只顯示原始 pointcloud
+### Terminal 4 可替代方案：只顯示原始 pointcloud
 
 ```bash
 ./scripts/run_visualization.sh pointcloud
@@ -420,7 +502,73 @@ Viewer 每秒最多解析、重建 Octree、刷新畫面的次數。預設是 `1
 
 目前 Gazebo plugin 發出的點雲沒有 ML label，因此一般展示 Octree 切割時不建議使用此選項。
 
-## 8. 畫面顏色與意義
+## 8. Leaf Feature CSV 輸出參數
+
+日常操作建議優先使用 `scripts/run_feature_export.sh` 上方的參數設定區。常用環境變數如下：
+
+- `GZ_PARTITION_VALUE`：Gazebo Transport partition。
+- `GZ_POINTCLOUD_TOPIC`：點雲 topic。
+- `FEATURE_OUTPUT`：CSV 輸出路徑。
+- `FEATURE_MAX_DEPTH`：建構 Octree 使用的最大深度。
+- `FEATURE_MAX_POINTS`：每次輸出最多使用多少收到的點。
+- `FEATURE_EXPORT_HZ`：每秒最多重建 Octree 並輸出 CSV 幾次。
+- `FEATURE_ONCE`：設為 `1` 時只輸出第一包點雲。
+- `FEATURE_TIMESTAMPED`：設為 `1` 時每次輸出獨立 CSV。
+
+底層 `leaf_feature_exporter_gazebo` CLI 參數如下：
+
+`--partition`
+
+Gazebo Transport partition。必須和 Gazebo simulation 使用相同 partition。
+
+`--topic`
+
+訂閱的 `gz::msgs::PointCloudPacked` topic。預設是 `/world/dynamic_cloud`。
+
+`--output`
+
+CSV 輸出路徑。未使用 `--timestamped` 時會覆蓋同一個檔案。
+
+`--max-depth`
+
+Octree 最大深度。這會影響 leaf voxel 大小，也會影響輸出的訓練樣本數。
+
+`--max-points`
+
+每次輸出最多使用多少點。若 Gazebo 發布的點數更多，exporter 會等距抽樣。
+
+`--export-hz`
+
+控制 CSV 輸出頻率。建議先用 `1`，也就是每秒最多輸出一次。
+
+`--once`
+
+輸出第一包收到的點雲後結束。
+
+`--timestamped`
+
+不覆蓋原 CSV，而是輸出：
+
+```text
+leaf_features_frame000001.csv
+leaf_features_frame000002.csv
+...
+```
+
+### CSV 欄位重點
+
+每一列代表一個 Octree leaf voxel。主要特徵包含：
+
+- 基本幾何：`num_points`、`voxel_volume`、`density`、`voxel_size`、`depth`
+- 位置：`center_x`、`center_y`、`center_z`、`height_ratio`
+- Normal：`avg_normal_x`、`avg_normal_y`、`avg_normal_z`
+- 方向：`verticality`、`horizontality`、`slope_angle_rad`
+- PCA：`eigenvalue_0`、`eigenvalue_1`、`eigenvalue_2`、`pca_linearity`、`pca_flatness`、`pca_roughness`、`pca_curvature`
+- 標籤欄位：最後兩欄固定為 `label`、`obstacle_probability`
+
+目前 Gazebo plugin 發出的 raw point cloud 尚未包含人工標註或模型推理結果，因此 CSV 中的 `label` 與 `obstacle_probability` 會來自 `OctreeNode` 目前預設值或後續流程寫入的值。也就是說，這份 CSV 已經有幾何特徵，但若要訓練監督式 Random Forest，仍需要後續補上正確 label。
+
+## 9. 畫面顏色與意義
 
 在預設 depth color 模式下：
 
@@ -433,7 +581,7 @@ Viewer 每秒最多解析、重建 Octree、刷新畫面的次數。預設是 `1
 
 PCL 的 point size 是螢幕像素大小，不是真實世界尺寸。因此要看 voxel 實際體積，請使用 `--voxel-mode boxes` 或 `--voxel-mode center-boxes`。
 
-## 9. 效能調整建議
+## 10. 效能調整建議
 
 如果 Gazebo 或 viewer 很卡，依序調整：
 
@@ -445,6 +593,14 @@ PCL 的 point size 是螢幕像素大小，不是真實世界尺寸。因此要�
 6. 在 SDF 中增大 `point_spacing`。
 7. 在 SDF 中降低 `update_rate`。
 
+如果 feature exporter 很吃 CPU 或 CSV 太大，依序調整：
+
+1. 降低 `FEATURE_MAX_POINTS`。
+2. 降低 `FEATURE_EXPORT_HZ`。
+3. 降低 `FEATURE_MAX_DEPTH`。
+4. 在 SDF 中降低 `max_points_per_publish`。
+5. 在 SDF 中增大 `point_spacing`。
+
 範例，低負載展示：
 
 ```bash
@@ -455,7 +611,7 @@ OCTREE_REBUILD_HZ=0.5 \
 ./scripts/run_visualization.sh octree
 ```
 
-## 10. 常見問題
+## 11. 常見問題
 
 ### 看不到 `/world/dynamic_cloud`
 
@@ -511,4 +667,24 @@ Viewer 啟動時也要指定：
 
 ```bash
 OCTREE_HIDE_POINTS=1 OCTREE_VOXEL_MODE=center-boxes OCTREE_MAX_VOXELS=2000 ./scripts/run_visualization.sh octree
+```
+
+### 沒有產生 `data/leaf_features.csv`
+
+確認 exporter 已建置：
+
+```bash
+cmake --build build --target leaf_feature_exporter_gazebo
+```
+
+確認 Gazebo 正在發布 topic：
+
+```bash
+GZ_PARTITION=dynamic_cloud_test gz topic -l
+```
+
+確認 exporter 使用相同 partition：
+
+```bash
+GZ_PARTITION_VALUE=dynamic_cloud_test ./scripts/run_feature_export.sh
 ```
