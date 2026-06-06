@@ -25,8 +25,64 @@ std::array<float, 3> sortedExtents(float dx, float dy, float dz) {
     return extents;
 }
 
+struct VerticalContext {
+    int story_index = 0;
+    float story_local_z = 0.0f;
+    float relative_height_from_floor = 0.0f;
+    float relative_distance_to_ceiling = 0.0f;
+    float height_ratio = 0.0f;
+    bool is_near_floor = false;
+    bool is_near_ceiling = false;
+};
+
+int computeStoryIndex(float z, float floor_z, float story_height, float epsilon) {
+    if (story_height <= epsilon) {
+        return 0;
+    }
+    return static_cast<int>(std::floor((z - floor_z) / story_height));
+}
+
+float computeStoryLocalZ(float z, float floor_z, float story_height, int story_index, float epsilon) {
+    if (story_height <= epsilon) {
+        return z - floor_z;
+    }
+    return z - (floor_z + static_cast<float>(story_index) * story_height);
+}
+
+VerticalContext computeVerticalContext(
+    float center_z,
+    float floor_z,
+    float story_height,
+    float floor_surface_offset,
+    float ceiling_offset,
+    float near_floor_distance,
+    float near_ceiling_distance,
+    float epsilon) {
+    VerticalContext context;
+    context.story_index = computeStoryIndex(center_z, floor_z, story_height, epsilon);
+    context.story_local_z =
+        computeStoryLocalZ(center_z, floor_z, story_height, context.story_index, epsilon);
+    context.relative_height_from_floor = context.story_local_z - floor_surface_offset;
+    context.relative_distance_to_ceiling = ceiling_offset - context.story_local_z;
+    context.height_ratio = clampFloat(
+        safeDivide(context.story_local_z - floor_surface_offset,
+                   ceiling_offset - floor_surface_offset), 0.0f, 1.0f);
+    context.is_near_floor = std::abs(context.relative_height_from_floor) <= near_floor_distance;
+    context.is_near_ceiling = std::abs(context.relative_distance_to_ceiling) <= near_ceiling_distance;
+    return context;
+}
+
 void writeHeader(std::ofstream& out) {
     out
+        << "node_index,"
+        << "entity_id,"
+        << "morton_code,"
+        << "min_x,"
+        << "min_y,"
+        << "min_z,"
+        << "max_x,"
+        << "max_y,"
+        << "max_z,"
         << "num_points,"
         << "voxel_volume,"
         << "density,"
@@ -38,6 +94,8 @@ void writeHeader(std::ofstream& out) {
         << "center_x,"
         << "center_y,"
         << "center_z,"
+        << "story_index,"
+        << "story_local_z,"
         << "relative_height_from_floor,"
         << "relative_distance_to_ceiling,"
         << "height_ratio,"
@@ -90,13 +148,15 @@ void writeLeafFeatures(std::ofstream& out,
     const float slope_angle_rad = std::acos(clampFloat(verticality, 0.0f, 1.0f));
     const float roughness_proxy = clampFloat(1.0f - normal_magnitude, 0.0f, 1.0f);
 
-    const float center_z = leaf.center[2];
-    const float relative_height_from_floor = center_z - config.floor_z;
-    const float relative_distance_to_ceiling = config.ceiling_z - center_z;
-    const float height_ratio = clampFloat(
-        safeDivide(center_z - config.floor_z, config.ceiling_z - config.floor_z), 0.0f, 1.0f);
-    const int is_near_floor = center_z < config.near_floor_z ? 1 : 0;
-    const int is_near_ceiling = center_z > config.near_ceiling_z ? 1 : 0;
+    const VerticalContext vertical = computeVerticalContext(
+        leaf.center[2],
+        config.floor_z,
+        config.story_height,
+        config.floor_surface_offset,
+        config.ceiling_offset,
+        config.near_floor_z,
+        config.near_ceiling_z,
+        config.epsilon);
 
     const std::array<float, 3> extents = sortedExtents(dx, dy, dz);
     const float min_extent = extents[0];
@@ -108,9 +168,18 @@ void writeLeafFeatures(std::ofstream& out,
     const float xy_area = dx * dy;
     const float z_extent = dz;
     const float normalized_depth = safeDivide(static_cast<float>(leaf.depth), 32.0f);
-    const uint32_t morton_low_8bits = leaf.morton_code & 0xffU;
+    const uint64_t morton_low_8bits = leaf.morton_code & 0xffULL;
 
     out
+        << leaf.node_index << ','
+        << leaf.entity_id << ','
+        << leaf.morton_code << ','
+        << leaf.min[0] << ','
+        << leaf.min[1] << ','
+        << leaf.min[2] << ','
+        << leaf.max[0] << ','
+        << leaf.max[1] << ','
+        << leaf.max[2] << ','
         << leaf.num_points << ','
         << voxel_volume << ','
         << density << ','
@@ -122,11 +191,13 @@ void writeLeafFeatures(std::ofstream& out,
         << leaf.center[0] << ','
         << leaf.center[1] << ','
         << leaf.center[2] << ','
-        << relative_height_from_floor << ','
-        << relative_distance_to_ceiling << ','
-        << height_ratio << ','
-        << is_near_floor << ','
-        << is_near_ceiling << ','
+        << vertical.story_index << ','
+        << vertical.story_local_z << ','
+        << vertical.relative_height_from_floor << ','
+        << vertical.relative_distance_to_ceiling << ','
+        << vertical.height_ratio << ','
+        << (vertical.is_near_floor ? 1 : 0) << ','
+        << (vertical.is_near_ceiling ? 1 : 0) << ','
         << nx << ','
         << ny << ','
         << nz << ','
@@ -153,15 +224,17 @@ void writeLeafFeatures(std::ofstream& out,
         << '\n';
 }
 
-LeafNode toLeafNode(const OctreeNode& node) {
+LeafNode toLeafNode(const OctreeNode& node, int node_index) {
     LeafNode leaf;
+    leaf.node_index = node_index;
+    leaf.entity_id = node.dominant_entity_id;
     leaf.min[0] = node.bounds.min.x;
     leaf.min[1] = node.bounds.min.y;
     leaf.min[2] = node.bounds.min.z;
     leaf.max[0] = node.bounds.max.x;
     leaf.max[1] = node.bounds.max.y;
     leaf.max[2] = node.bounds.max.z;
-    leaf.morton_code = static_cast<uint32_t>(node.morton_code & 0xffffffffULL);
+    leaf.morton_code = node.morton_code;
     leaf.depth = static_cast<uint8_t>(std::max(0, std::min(node.depth, 255)));
     leaf.num_points = node.point_count;
     leaf.avg_normal[0] = node.avg_normal.x;
@@ -181,6 +254,56 @@ LeafNode toLeafNode(const OctreeNode& node) {
     leaf.label = static_cast<int>(node.label);
     leaf.obstacle_probability = node.obstacle_probability;
     return leaf;
+}
+
+void applyWeakLabel(LeafNode& leaf, const WeakLabelingConfig& config) {
+    const float nx = leaf.avg_normal[0];
+    const float ny = leaf.avg_normal[1];
+    const float nz = leaf.avg_normal[2];
+    const float normal_magnitude = std::sqrt(nx * nx + ny * ny + nz * nz);
+    const float verticality = normal_magnitude > 1e-6f ? std::abs(nz) / normal_magnitude : 0.0f;
+    const float slope_angle_rad = std::acos(clampFloat(verticality, 0.0f, 1.0f));
+    const VerticalContext vertical = computeVerticalContext(
+        leaf.center[2],
+        config.floor_z,
+        config.story_height,
+        config.floor_surface_offset,
+        config.ceiling_offset,
+        config.floor_band,
+        config.floor_band,
+        1e-6f);
+    const float relative_height = vertical.relative_height_from_floor;
+    const bool near_floor = vertical.is_near_floor;
+    const bool flat_surface = verticality >= std::cos(config.free_max_slope_rad);
+    const bool sloped_surface =
+        slope_angle_rad >= config.stair_min_slope_rad &&
+        slope_angle_rad <= config.stair_max_slope_rad;
+    const bool enough_points = leaf.num_points >= config.min_points_for_confident_label;
+
+    if (enough_points && near_floor && flat_surface && leaf.pca_flatness >= 0.35f) {
+        leaf.label = static_cast<int>(VoxelLabel::Free);
+        leaf.obstacle_probability = 0.05f;
+        return;
+    }
+
+    if (enough_points &&
+        relative_height >= config.min_stair_height &&
+        vertical.story_local_z <= config.ceiling_offset &&
+        sloped_surface &&
+        leaf.pca_flatness >= 0.25f) {
+        leaf.label = static_cast<int>(VoxelLabel::Stair);
+        leaf.obstacle_probability = 0.25f;
+        return;
+    }
+
+    if (enough_points && relative_height > config.floor_band) {
+        leaf.label = static_cast<int>(VoxelLabel::Obstacle);
+        leaf.obstacle_probability = verticality < 0.45f ? 0.90f : 0.75f;
+        return;
+    }
+
+    leaf.label = static_cast<int>(VoxelLabel::Obstacle);
+    leaf.obstacle_probability = enough_points ? 0.65f : 0.50f;
 }
 
 } // namespace
@@ -228,14 +351,43 @@ void exportLeafFeaturesToCSV(const std::vector<LeafNode>& leaves,
 
 void exportOctreeLeafFeaturesToCSV(const std::vector<OctreeNode>& nodes,
                                    const std::string& filename) {
+    exportOctreeLeafFeaturesToCSV(nodes, filename, FeatureExtractionConfig{});
+}
+
+void exportOctreeLeafFeaturesToCSV(const std::vector<OctreeNode>& nodes,
+                                   const std::string& filename,
+                                   const FeatureExtractionConfig& config) {
     std::vector<LeafNode> leaves;
     leaves.reserve(nodes.size());
-    for (const OctreeNode& node : nodes) {
-        if (node.leaf) {
-            leaves.push_back(toLeafNode(node));
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        if (nodes[i].leaf) {
+            leaves.push_back(toLeafNode(nodes[i], static_cast<int>(i)));
         }
     }
-    exportLeafFeaturesToCSV(leaves, filename);
+    exportLeafFeaturesToCSV(leaves, filename, config);
+}
+
+void assignWeakLabels(std::vector<LeafNode>& leaves,
+                      const WeakLabelingConfig& config) {
+    for (LeafNode& leaf : leaves) {
+        applyWeakLabel(leaf, config);
+    }
+}
+
+void exportWeakLabeledOctreeLeafFeaturesToCSV(
+    const std::vector<OctreeNode>& nodes,
+    const std::string& filename,
+    const WeakLabelingConfig& config,
+    const FeatureExtractionConfig& feature_config) {
+    std::vector<LeafNode> leaves;
+    leaves.reserve(nodes.size());
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        if (nodes[i].leaf) {
+            leaves.push_back(toLeafNode(nodes[i], static_cast<int>(i)));
+        }
+    }
+    assignWeakLabels(leaves, config);
+    exportLeafFeaturesToCSV(leaves, filename, feature_config);
 }
 
 } // namespace navigation

@@ -47,6 +47,7 @@ warehouse_world.sdf
 - 將 local cloud cache 起來，避免每個 simulation tick 重新取樣。
 - 每次發布時只根據目前 entity pose 把 local points 轉成 world coordinates。
 - 將全世界點雲發布成 `gz::msgs::PointCloudPacked`。
+- 每個點除了 `x/y/z`，也會帶 `label`、`obstacle_probability`、`entity_id`。
 - 可選擇定期輸出 `.pcd` 檔案。
 - 支援 simulation 中新增或刪除 entity 時更新 cache。
 
@@ -81,8 +82,10 @@ warehouse_world.sdf
 
 - `leaf_feature_exporter.cpp` 將 `OctreeNode` leaf 轉成 Random Forest 訓練用特徵列。
 - `gazebo_leaf_feature_exporter.cpp` 是 headless 資料管線節點，直接訂閱 Gazebo `/world/dynamic_cloud`。
-- 每次收到點雲後，依照 `--export-hz` 節流，將最新點雲轉成 `std::vector<navigation::Point3D>`。
-- 使用 `OctreeManager::initialize(points)` 建立當前 frame 的 Octree。
+- 每次收到點雲後，依照 `--export-hz` 節流，將最新點雲轉成 `std::vector<navigation::PointCloudSample>`。
+- 若 topic 內有 semantic 欄位，直接填入 `label`、`obstacle_probability`、`entity_id`。
+- 使用 `OctreeManager::initialize(samples)` 建立當前 frame 的 Octree。
+- Octree 會把 leaf 內 semantic points 聚合成 leaf label 與 dominant entity。
 - 呼叫 `exportOctreeLeafFeaturesToCSV(octree.nodes(), output_path)` 輸出 CSV。
 - 可以用固定檔名覆蓋輸出，也可以用 `--timestamped` 保留每一個 frame 的 CSV。
 
@@ -245,12 +248,26 @@ gz::msgs::PointCloudPacked
 目前欄位格式是：
 
 ```text
-field: "xyz"
+field: "x" / "y" / "z"
 datatype: FLOAT32
-point_step: 12 bytes
-每個點: float x, float y, float z
+field: "label"
+datatype: UINT32
+field: "obstacle_probability"
+datatype: FLOAT32
+field: "entity_id"
+datatype: UINT32
+point_step: 24 bytes
+每個點: float x, float y, float z, uint32 label, float probability, uint32 entity_id
 frame: "world"
 ```
+
+`DynamicWorldCloud` 目前會根據 collision scoped name 與 geometry 做 semantic 推論：
+
+- 名稱包含 `stair`：`label=2`，代表樓梯。
+- 名稱包含 `floor` 或 `ground`，或 collision geometry 是 plane：`label=0`，代表可通行地板。
+- 其他 collision：`label=1`，代表障礙物。
+
+`entity_id` 來自 Gazebo collision entity id，會被 exporter 聚合成 leaf 的 dominant entity，方便後續回查 leaf 主要來自哪個物件。
 
 資料傳遞方式：
 
@@ -263,8 +280,8 @@ DynamicWorldCloud::PublishPointCloud()
 訓練資料:
   -> gazebo_leaf_feature_exporter.cpp callback
   -> parsePointCloudPacked()
-  -> std::vector<navigation::Point3D>
-  -> OctreeManager::initialize(points)
+  -> std::vector<navigation::PointCloudSample>
+  -> OctreeManager::initialize(samples)
   -> exportOctreeLeafFeaturesToCSV()
   -> data/leaf_features.csv
 
@@ -278,7 +295,7 @@ DynamicWorldCloud::PublishPointCloud()
 
 Viewer 會根據 `--max-render-points` 對收到的點雲再做一次抽樣，避免大量點雲造成 Octree 重建與 PCL rendering 過慢。
 
-Feature exporter 會根據 `--max-points` 對收到的點雲抽樣，避免訓練資料輸出拖慢 simulation。
+Feature exporter 會根據 `--max-points` 對收到的點雲抽樣，避免訓練資料輸出拖慢 simulation。若點雲含 semantic 欄位，抽樣後仍會保留每個 sample 的 label、probability 與 entity id。
 
 ## 5. 建置方式
 
@@ -529,6 +546,13 @@ Viewer 每秒最多解析、重建 Octree、刷新畫面的次數。預設是 `1
 - `FEATURE_EXPORT_HZ`：每秒最多重建 Octree 並輸出 CSV 幾次。
 - `FEATURE_ONCE`：設為 `1` 時只輸出第一包點雲。
 - `FEATURE_TIMESTAMPED`：設為 `1` 時每次輸出獨立 CSV。
+- `FEATURE_WEAK_LABELS`：設為 `1` 時用規則填入 `label` 與 `obstacle_probability`。
+- `FEATURE_FLOOR_Z`：第 0 層樓的 z 原點。
+- `FEATURE_STORY_HEIGHT`：樓層週期高度，預設 `4`。
+- `FEATURE_FLOOR_SURFACE_OFFSET`：每層樓內可通行地板面的局部 z offset。
+- `FEATURE_CEILING_OFFSET`：每層樓內天花板局部 z offset，預設 `3`。
+- `FEATURE_NEAR_FLOOR`：判斷接近地板的距離帶。
+- `FEATURE_NEAR_CEILING`：判斷接近天花板的距離帶。
 
 底層 `leaf_feature_exporter_gazebo` CLI 參數如下：
 
@@ -556,6 +580,38 @@ Octree 最大深度。這會影響 leaf voxel 大小，也會影響輸出的訓�
 
 控制 CSV 輸出頻率。建議先用 `1`，也就是每秒最多輸出一次。
 
+`--weak-labels`
+
+不用 Gazebo topic 內的 semantic 欄位，改用 exporter 端 rule-based weak labeling 覆寫 `label` 與 `obstacle_probability`。一般情況建議使用 Gazebo plugin 發出的 semantic labels；`--weak-labels` 適合舊點雲或沒有 semantic 欄位的資料。
+
+`--floor-z`
+
+第 0 層樓的 z 原點。預設是 `0`。
+
+`--story-height`
+
+樓層週期高度。若地板厚度 1m、牆高 3m，則 floor-to-floor 高度為 `4`。
+
+`--floor-surface-offset`
+
+每層樓內可通行地板面的局部 z offset。若你的座標系把每層地板面放在樓層起點，使用預設 `0`；若地板模型厚度 1m 且可通行面在樓層起點上方 1m，可設為 `1`。
+
+`--ceiling-offset`
+
+每層樓內天花板局部 z offset。若牆高 3m，通常設為 `3`。
+
+`--near-floor`
+
+判斷接近地板面的距離帶。預設 `0.4`。
+
+`--near-ceiling`
+
+判斷接近天花板的距離帶。預設 `0.4`。
+
+`--ceiling-z`
+
+舊參數，現在作為 `--ceiling-offset` 的 alias。
+
 `--once`
 
 輸出第一包收到的點雲後結束。
@@ -574,14 +630,33 @@ leaf_features_frame000002.csv
 
 每一列代表一個 Octree leaf voxel。主要特徵包含：
 
+- 追蹤定位：`node_index`、`entity_id`、`morton_code`、`min_x`、`min_y`、`min_z`、`max_x`、`max_y`、`max_z`
 - 基本幾何：`num_points`、`voxel_volume`、`density`、`voxel_size`、`depth`
-- 位置：`center_x`、`center_y`、`center_z`、`height_ratio`
+- 位置：`center_x`、`center_y`、`center_z`、`story_index`、`story_local_z`、`height_ratio`
 - Normal：`avg_normal_x`、`avg_normal_y`、`avg_normal_z`
 - 方向：`verticality`、`horizontality`、`slope_angle_rad`
 - PCA：`eigenvalue_0`、`eigenvalue_1`、`eigenvalue_2`、`pca_linearity`、`pca_flatness`、`pca_roughness`、`pca_curvature`
 - 標籤欄位：最後兩欄固定為 `label`、`obstacle_probability`
 
-目前 Gazebo plugin 發出的 raw point cloud 尚未包含人工標註或模型推理結果，因此 CSV 中的 `label` 與 `obstacle_probability` 會來自 `OctreeNode` 目前預設值或後續流程寫入的值。也就是說，這份 CSV 已經有幾何特徵，但若要訓練監督式 Random Forest，仍需要後續補上正確 label。
+`node_index` 是同一次 Octree 建構中的節點索引，適合用來在當前 process 內回查 `octree.nodes()[node_index]`。`entity_id` 是 leaf 內 semantic points 投票最多的 Gazebo collision entity id。若 leaf 同時包含地板與障礙物邊界點，`obstacle_probability` 會接近這些 semantic points 的平均障礙概率，因此可近似反映 leaf 與障礙物的重疊程度。
+
+如果跨 frame、改變 `max_depth`、改變點雲抽樣數，Octree 可能重新切割，`node_index` 不保證穩定。要做跨檔案追蹤時，請同時使用 `entity_id`、`morton_code`、`depth`、AABB bounds 與 center 來比對。
+
+目前 Gazebo plugin 發出的 point cloud 已包含 rule-based semantic labels，因此 CSV 中的 `label` 與 `obstacle_probability` 預設會由 Gazebo collision source 聚合而來。這比只看 leaf 幾何特徵更適合產生 Random Forest 初版訓練資料。
+
+如果想先建立可訓練的初版資料，可以啟用弱標註：
+
+```bash
+FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
+```
+
+弱標註會根據 leaf 高度、normal 方向、斜率與 PCA flatness 粗略填入：
+
+- `0`：接近地板、接近平面且法向量朝上的 free voxel。
+- `1`：高於地板、較像牆面或物體表面的 obstacle voxel。
+- `2`：有一定高度、表面斜率落在樓梯範圍內的 stair voxel。
+
+這些標籤適合拿來 bootstrap 或人工校正，不建議直接視為最終 ground truth。
 
 ## 9. 畫面顏色與意義
 

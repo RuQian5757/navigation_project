@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -61,6 +62,17 @@ private:
     gz::sim::Entity model_entity{gz::sim::kNullEntity};
     std::string scoped_name;
     pcl::PointCloud<pcl::PointXYZ> local_cloud;
+    uint32_t label{0};
+    float obstacle_probability{0.0f};
+    uint32_t entity_id{0};
+  };
+
+  /// \brief Per-world-point semantic metadata, kept parallel to global_cloud_.
+  struct PointSemantic
+  {
+    uint32_t label{0};
+    float obstacle_probability{0.0f};
+    uint32_t entity_id{0};
   };
 
   /// \brief Traverse Model -> Link -> Collision hierarchy and return live
@@ -108,6 +120,11 @@ private:
   pcl::PointXYZ TransformLocalToWorld(const pcl::PointXYZ &_pt,
                                       const gz::math::Pose3d &_pose) const;
 
+  /// \brief Infer a navigation label from collision/model name and geometry.
+  PointSemantic InferSemantics(const std::string &_scopedName,
+                               const sdf::Geometry &_geometry,
+                               uint64_t _entityKey) const;
+
   /// \brief Rebuild the global cloud from current world poses.
   void RebuildGlobalCloud(const gz::sim::EntityComponentManager &_ecm);
 
@@ -140,6 +157,7 @@ private:
   mutable std::unordered_map<std::string, pcl::PointCloud<pcl::PointXYZ>>
       mesh_vertex_cache_;
   pcl::PointCloud<pcl::PointXYZ> global_cloud_;
+  std::vector<PointSemantic> global_semantics_;
 
   gz::transport::Node transport_node_;
   gz::transport::Node::Publisher cloud_pub_;

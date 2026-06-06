@@ -26,6 +26,20 @@ namespace {
 
 std::atomic_bool g_running{true};
 
+struct PackedFieldOffsets {
+    int x = -1;
+    int y = -1;
+    int z = -1;
+    int label = -1;
+    int obstacle_probability = -1;
+    int entity_id = -1;
+};
+
+struct ParsedCloud {
+    std::vector<navigation::PointCloudSample> samples;
+    bool has_semantics = false;
+};
+
 struct Options {
     std::string topic = "/world/dynamic_cloud";
     std::string partition = "dynamic_cloud_test";
@@ -35,6 +49,9 @@ struct Options {
     double export_hz = 1.0;
     bool once = false;
     bool timestamped = false;
+    bool weak_labels = false;
+    navigation::FeatureExtractionConfig feature_extraction;
+    navigation::WeakLabelingConfig weak_labeling;
 };
 
 void onSignal(int) {
@@ -52,6 +69,14 @@ void printUsage(const char* program) {
         << "  --max-depth N         Viewer/export Octree max depth, default 9\n"
         << "  --max-points N        Max received points used per export, default 120000\n"
         << "  --export-hz HZ        Max CSV export rate, default 1\n"
+        << "  --weak-labels         Fill label/probability with rule-based weak labels\n"
+        << "  --floor-z Z           Story-0 origin height, default 0\n"
+        << "  --story-height H      Repeated floor-to-floor height, default 4\n"
+        << "  --floor-surface-offset Z Local walkable floor surface offset, default 0\n"
+        << "  --ceiling-offset Z    Local ceiling offset in each story, default 3\n"
+        << "  --near-floor Z        Near-floor distance band, default 0.4\n"
+        << "  --near-ceiling Z      Near-ceiling distance band, default 0.4\n"
+        << "  --ceiling-z Z         Alias for --ceiling-offset\n"
         << "  --once                Export the first received cloud and exit\n"
         << "  --timestamped         Write output_stem_frameNNNNNN.csv instead of overwriting\n"
         << "  --help                Show this message\n";
@@ -78,6 +103,38 @@ ParseResult parseArgs(int argc, char** argv, Options& options) {
             options.max_points = std::max(1, std::stoi(argv[++i]));
         } else if (arg == "--export-hz" && i + 1 < argc) {
             options.export_hz = std::max(0.05, std::stod(argv[++i]));
+        } else if (arg == "--weak-labels") {
+            options.weak_labels = true;
+        } else if (arg == "--floor-z" && i + 1 < argc) {
+            const float value = static_cast<float>(std::stod(argv[++i]));
+            options.feature_extraction.floor_z = value;
+            options.weak_labeling.floor_z = value;
+        } else if (arg == "--story-height" && i + 1 < argc) {
+            const float value = std::max(0.001f, static_cast<float>(std::stod(argv[++i])));
+            options.feature_extraction.story_height = value;
+            options.weak_labeling.story_height = value;
+        } else if (arg == "--floor-surface-offset" && i + 1 < argc) {
+            const float value = static_cast<float>(std::stod(argv[++i]));
+            options.feature_extraction.floor_surface_offset = value;
+            options.weak_labeling.floor_surface_offset = value;
+        } else if (arg == "--ceiling-offset" && i + 1 < argc) {
+            const float value = static_cast<float>(std::stod(argv[++i]));
+            options.feature_extraction.ceiling_offset = value;
+            options.feature_extraction.ceiling_z = value;
+            options.weak_labeling.ceiling_offset = value;
+            options.weak_labeling.ceiling_z = value;
+        } else if (arg == "--near-floor" && i + 1 < argc) {
+            options.feature_extraction.near_floor_z =
+                std::max(0.0f, static_cast<float>(std::stod(argv[++i])));
+        } else if (arg == "--near-ceiling" && i + 1 < argc) {
+            options.feature_extraction.near_ceiling_z =
+                std::max(0.0f, static_cast<float>(std::stod(argv[++i])));
+        } else if (arg == "--ceiling-z" && i + 1 < argc) {
+            const float value = static_cast<float>(std::stod(argv[++i]));
+            options.feature_extraction.ceiling_offset = value;
+            options.feature_extraction.ceiling_z = value;
+            options.weak_labeling.ceiling_offset = value;
+            options.weak_labeling.ceiling_z = value;
         } else if (arg == "--once") {
             options.once = true;
         } else if (arg == "--timestamped") {
@@ -94,35 +151,55 @@ ParseResult parseArgs(int argc, char** argv, Options& options) {
     return ParseResult::Ok;
 }
 
-bool findXYZOffsets(const gz::msgs::PointCloudPacked& msg,
-                    int& x_offset, int& y_offset, int& z_offset) {
-    x_offset = -1;
-    y_offset = -1;
-    z_offset = -1;
-
+bool findFieldOffsets(const gz::msgs::PointCloudPacked& msg,
+                      PackedFieldOffsets& offsets) {
     for (int i = 0; i < msg.field_size(); ++i) {
         const auto& field = msg.field(i);
-        if (field.datatype() != gz::msgs::PointCloudPacked::Field::FLOAT32) {
-            continue;
-        }
 
-        if (field.name() == "x") {
-            x_offset = static_cast<int>(field.offset());
-        } else if (field.name() == "y") {
-            y_offset = static_cast<int>(field.offset());
-        } else if (field.name() == "z") {
-            z_offset = static_cast<int>(field.offset());
-        } else if (field.name() == "xyz") {
-            x_offset = static_cast<int>(field.offset());
-            y_offset = x_offset + static_cast<int>(sizeof(float));
-            z_offset = y_offset + static_cast<int>(sizeof(float));
+        if (field.datatype() == gz::msgs::PointCloudPacked::Field::FLOAT32) {
+            if (field.name() == "x") {
+                offsets.x = static_cast<int>(field.offset());
+            } else if (field.name() == "y") {
+                offsets.y = static_cast<int>(field.offset());
+            } else if (field.name() == "z") {
+                offsets.z = static_cast<int>(field.offset());
+            } else if (field.name() == "xyz") {
+                offsets.x = static_cast<int>(field.offset());
+                offsets.y = offsets.x + static_cast<int>(sizeof(float));
+                offsets.z = offsets.y + static_cast<int>(sizeof(float));
+            } else if (field.name() == "obstacle_probability") {
+                offsets.obstacle_probability = static_cast<int>(field.offset());
+            }
+        } else if (field.datatype() == gz::msgs::PointCloudPacked::Field::UINT32) {
+            if (field.name() == "label") {
+                offsets.label = static_cast<int>(field.offset());
+            } else if (field.name() == "entity_id") {
+                offsets.entity_id = static_cast<int>(field.offset());
+            }
         }
     }
 
-    return x_offset >= 0 && y_offset >= 0 && z_offset >= 0;
+    return offsets.x >= 0 && offsets.y >= 0 && offsets.z >= 0;
 }
 
-std::vector<navigation::Point3D> parsePointCloudPacked(
+navigation::VoxelLabel toVoxelLabel(std::uint32_t label) {
+    if (label == static_cast<std::uint32_t>(navigation::VoxelLabel::Obstacle)) {
+        return navigation::VoxelLabel::Obstacle;
+    }
+    if (label == static_cast<std::uint32_t>(navigation::VoxelLabel::Stair)) {
+        return navigation::VoxelLabel::Stair;
+    }
+    return navigation::VoxelLabel::Free;
+}
+
+float clampProbability(float value) {
+    if (!std::isfinite(value)) {
+        return 0.0f;
+    }
+    return std::max(0.0f, std::min(1.0f, value));
+}
+
+ParsedCloud parsePointCloudPacked(
     const gz::msgs::PointCloudPacked& msg,
     int max_points,
     std::uint64_t& source_points) {
@@ -132,10 +209,8 @@ std::vector<navigation::Point3D> parsePointCloudPacked(
         return {};
     }
 
-    int x_offset = -1;
-    int y_offset = -1;
-    int z_offset = -1;
-    if (!findXYZOffsets(msg, x_offset, y_offset, z_offset)) {
+    PackedFieldOffsets offsets;
+    if (!findFieldOffsets(msg, offsets)) {
         throw std::runtime_error("PointCloudPacked does not contain FLOAT32 x/y/z or xyz fields");
     }
 
@@ -151,8 +226,9 @@ std::vector<navigation::Point3D> parsePointCloudPacked(
                                                    static_cast<double>(max_points)))
                                    : 1U;
 
-    std::vector<navigation::Point3D> points;
-    points.reserve(static_cast<std::size_t>(
+    ParsedCloud parsed;
+    parsed.has_semantics = offsets.label >= 0 && offsets.obstacle_probability >= 0;
+    parsed.samples.reserve(static_cast<std::size_t>(
         std::min<std::uint64_t>(source_points, static_cast<std::uint64_t>(max_points))));
 
     const char* data = msg.data().data();
@@ -161,15 +237,38 @@ std::vector<navigation::Point3D> parsePointCloudPacked(
         float x = 0.0f;
         float y = 0.0f;
         float z = 0.0f;
-        std::memcpy(&x, data + base + static_cast<std::size_t>(x_offset), sizeof(float));
-        std::memcpy(&y, data + base + static_cast<std::size_t>(y_offset), sizeof(float));
-        std::memcpy(&z, data + base + static_cast<std::size_t>(z_offset), sizeof(float));
+        std::memcpy(&x, data + base + static_cast<std::size_t>(offsets.x), sizeof(float));
+        std::memcpy(&y, data + base + static_cast<std::size_t>(offsets.y), sizeof(float));
+        std::memcpy(&z, data + base + static_cast<std::size_t>(offsets.z), sizeof(float));
         if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
-            points.push_back({x, y, z});
+            navigation::PointCloudSample sample;
+            sample.point = {x, y, z};
+            if (parsed.has_semantics) {
+                std::uint32_t label = 0;
+                std::uint32_t entity_id = 0;
+                float obstacle_probability = 0.0f;
+                std::memcpy(&label,
+                            data + base + static_cast<std::size_t>(offsets.label),
+                            sizeof(label));
+                std::memcpy(&obstacle_probability,
+                            data + base + static_cast<std::size_t>(offsets.obstacle_probability),
+                            sizeof(obstacle_probability));
+                if (offsets.entity_id >= 0) {
+                    std::memcpy(&entity_id,
+                                data + base + static_cast<std::size_t>(offsets.entity_id),
+                                sizeof(entity_id));
+                }
+                sample.label = toVoxelLabel(label);
+                sample.obstacle_probability = clampProbability(obstacle_probability);
+                sample.entity_id = entity_id;
+                sample.has_semantics = true;
+                sample.is_cross_floor = sample.label == navigation::VoxelLabel::Stair;
+            }
+            parsed.samples.push_back(sample);
         }
     }
 
-    return points;
+    return parsed;
 }
 
 std::string outputPathForFrame(const std::string& output, std::uint64_t frame, bool timestamped) {
@@ -240,9 +339,9 @@ int main(int argc, char** argv) {
 
             try {
                 std::uint64_t source_points = 0;
-                const std::vector<navigation::Point3D> points =
+                const ParsedCloud parsed =
                     parsePointCloudPacked(msg, options.max_points, source_points);
-                if (points.empty()) {
+                if (parsed.samples.empty()) {
                     std::cerr << "[leaf_feature_exporter] Received empty point cloud\n";
                     busy = false;
                     return;
@@ -251,18 +350,26 @@ int main(int argc, char** argv) {
                 navigation::OctreeConfig config;
                 config.max_depth = options.max_depth;
                 navigation::OctreeManager octree(config);
-                octree.initialize(points);
+                octree.initialize(parsed.samples);
 
                 const std::uint64_t frame = ++frame_counter;
                 const std::string output_path =
                     outputPathForFrame(options.output, frame, options.timestamped);
                 ensureParentDirectory(output_path);
-                navigation::exportOctreeLeafFeaturesToCSV(octree.nodes(), output_path);
+                if (options.weak_labels) {
+                    navigation::exportWeakLabeledOctreeLeafFeaturesToCSV(
+                        octree.nodes(), output_path, options.weak_labeling,
+                        options.feature_extraction);
+                } else {
+                    navigation::exportOctreeLeafFeaturesToCSV(
+                        octree.nodes(), output_path, options.feature_extraction);
+                }
 
                 std::cout << "[leaf_feature_exporter] frame=" << frame
                           << " source_points=" << source_points
-                          << " used_points=" << points.size()
+                          << " used_points=" << parsed.samples.size()
                           << " leaves=" << octree.getLeafCount()
+                          << " semantic_fields=" << (parsed.has_semantics ? "true" : "false")
                           << " output='" << output_path << "'\n";
 
                 exported_once = true;
@@ -284,7 +391,8 @@ int main(int argc, char** argv) {
 
     std::cout << "[leaf_feature_exporter] subscribed topic='" << options.topic
               << "' partition='" << options.partition
-              << "' output='" << options.output << "'\n";
+              << "' output='" << options.output
+              << "' weak_labels=" << (options.weak_labels ? "true" : "false") << "\n";
 
     while (g_running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));

@@ -128,8 +128,8 @@ Plugin 會：
 2. 依照 `point_spacing` 取樣成 local point cloud。
 3. 將 local cloud cache 起來。
 4. 在 `PostUpdate()` 依照 `update_rate` 轉成 world coordinates。
-5. 發布 `gz::msgs::PointCloudPacked` 到 `/world/dynamic_cloud`。
-6. `leaf_feature_exporter_gazebo` 可訂閱 topic，轉成 `std::vector<navigation::Point3D>`。
+5. 發布帶語義欄位的 `gz::msgs::PointCloudPacked` 到 `/world/dynamic_cloud`。
+6. `leaf_feature_exporter_gazebo` 可訂閱 topic，轉成 `std::vector<navigation::PointCloudSample>`。
 7. `OctreeManager` 建立 Octree，計算 leaf PCA / normal / density 等特徵。
 8. `leaf_feature_exporter` 將 leaf features 輸出成 CSV。
 9. Viewer 也可同時訂閱同一個 topic，獨立負責 PCLVisualizer 顯示。
@@ -190,6 +190,11 @@ Feature exporter 參數：
 - `--max-depth`：特徵輸出使用的 Octree 最大深度。
 - `--max-points`：每次輸出最多使用多少收到的點。
 - `--export-hz`：每秒最多重建 Octree 並輸出 CSV 幾次。
+- `--weak-labels`：不用 Gazebo semantic 欄位，改用 exporter 端規則覆寫 `label` 與 `obstacle_probability`。
+- `--floor-z`：第 0 層樓的 z 原點。
+- `--story-height`：樓層週期高度，預設 `4`。
+- `--floor-surface-offset`：每層樓內可通行地板面的局部 z offset。
+- `--ceiling-offset`：每層樓內天花板局部 z offset，預設 `3`。
 - `--once`：收到第一包點雲後輸出一次就結束。
 - `--timestamped`：每次輸出成獨立檔案，不覆蓋前一份 CSV。
 
@@ -199,6 +204,7 @@ Feature exporter 參數：
 OCTREE_MAX_VOXELS=1000 ./scripts/run_visualization.sh octree
 POINTCLOUD_POINT_SIZE=2 ./scripts/run_visualization.sh pointcloud
 FEATURE_EXPORT_HZ=0.5 FEATURE_TIMESTAMPED=1 ./scripts/run_feature_export.sh
+FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 ```
 
 ## 狀態與後續工作

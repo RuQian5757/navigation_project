@@ -38,6 +38,7 @@
 - 每個 leaf voxel 儲存：
   - `label`（0=可通行、1=障礙、2=樓梯）
   - `obstacle_probability`
+  - `dominant_entity_id`（leaf 內 semantic points 主要來源的 Gazebo collision entity）
   - `room_id`
   - `is_cross_floor`
 - 透過 `assignLeafLabel()` 將 ML 標籤寫入 leaf。

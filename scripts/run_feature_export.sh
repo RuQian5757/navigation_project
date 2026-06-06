@@ -62,6 +62,20 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Example: data/leaf_features_frame000001.csv
 : "${FEATURE_TIMESTAMPED:=0}"
 
+# Set to 1 to fill label / obstacle_probability with simple rule-based weak labels.
+# This is useful for bootstrapping a training CSV before manual correction.
+: "${FEATURE_WEAK_LABELS:=0}"
+
+# Multi-floor vertical model used by feature extraction and weak-label fallback.
+# If each floor slab is 1m and each wall / indoor navigable height is 3m,
+# the floor-to-floor story height is 4m.
+: "${FEATURE_FLOOR_Z:=0}"
+: "${FEATURE_STORY_HEIGHT:=4}"
+: "${FEATURE_FLOOR_SURFACE_OFFSET:=1}"
+: "${FEATURE_CEILING_OFFSET:=4}"
+: "${FEATURE_NEAR_FLOOR:=0.4}"
+: "${FEATURE_NEAR_CEILING:=0.4}"
+
 print_usage() {
   cat <<'EOF'
 Usage:
@@ -77,6 +91,13 @@ Environment overrides:
   FEATURE_EXPORT_HZ       Max export frequency
   FEATURE_ONCE            1 exports first cloud and exits
   FEATURE_TIMESTAMPED     1 writes one CSV per exported frame
+  FEATURE_WEAK_LABELS     1 fills labels with rule-based weak labels
+  FEATURE_FLOOR_Z         Story-0 origin height
+  FEATURE_STORY_HEIGHT    Repeated floor-to-floor height
+  FEATURE_FLOOR_SURFACE_OFFSET Local walkable floor surface offset in each story
+  FEATURE_CEILING_OFFSET  Local ceiling offset in each story
+  FEATURE_NEAR_FLOOR      Near-floor distance band
+  FEATURE_NEAR_CEILING    Near-ceiling distance band
 EOF
 }
 
@@ -106,6 +127,12 @@ args=(
   --max-depth "${FEATURE_MAX_DEPTH}"
   --max-points "${FEATURE_MAX_POINTS}"
   --export-hz "${FEATURE_EXPORT_HZ}"
+  --floor-z "${FEATURE_FLOOR_Z}"
+  --story-height "${FEATURE_STORY_HEIGHT}"
+  --floor-surface-offset "${FEATURE_FLOOR_SURFACE_OFFSET}"
+  --ceiling-offset "${FEATURE_CEILING_OFFSET}"
+  --near-floor "${FEATURE_NEAR_FLOOR}"
+  --near-ceiling "${FEATURE_NEAR_CEILING}"
 )
 
 if [ "${FEATURE_ONCE}" = "1" ]; then
@@ -114,6 +141,10 @@ fi
 
 if [ "${FEATURE_TIMESTAMPED}" = "1" ]; then
   args+=(--timestamped)
+fi
+
+if [ "${FEATURE_WEAK_LABELS}" = "1" ]; then
+  args+=(--weak-labels)
 fi
 
 exec "${FEATURE_EXPORTER_BIN}" "${args[@]}" "$@"

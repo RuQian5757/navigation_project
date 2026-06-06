@@ -11,6 +11,7 @@ ground-truth point cloud from world collision geometry.
 - Samples each local collision cloud once, then only transforms cached points
 - Uses `gz::common::MeshManager` for mesh loading and vertex extraction
 - Publishes `gz::msgs::PointCloudPacked` on `/world/dynamic_cloud`
+- Publishes semantic fields per point: `label`, `obstacle_probability`, `entity_id`
 - Saves binary PCD snapshots every configured interval
 - Detects spawned and deleted entities during simulation
 - Preserves full XYZ coordinates for multi-floor navigation
@@ -57,6 +58,21 @@ source install/setup.bash
   <transport_topic>/world/dynamic_cloud</transport_topic>
 </plugin>
 ```
+
+## Semantic Fields
+
+The published `PointCloudPacked` contains:
+
+- `x`, `y`, `z` as `FLOAT32`
+- `label` as `UINT32`: `0=free`, `1=obstacle`, `2=stair`
+- `obstacle_probability` as `FLOAT32`
+- `entity_id` as `UINT32`
+
+Current label inference is name based:
+
+- scoped collision name containing `stair` -> stair
+- scoped collision name containing `floor` / `ground`, or plane geometry -> free
+- all other collision geometry -> obstacle
 
 When launching from this repository without installation, use:
 

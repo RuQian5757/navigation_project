@@ -690,6 +690,7 @@ void OctreeManager::aggregateSampleSemantics(int node_index, const std::vector<P
     int stair_count = 0;
     float probability_sum = 0.0f;
     std::unordered_map<int, int> room_votes;
+    std::unordered_map<uint32_t, int> entity_votes;
     bool cross_floor = false;
 
     for (const PointCloudSample& sample : samples) {
@@ -699,6 +700,7 @@ void OctreeManager::aggregateSampleSemantics(int node_index, const std::vector<P
         ++semantic_count;
         probability_sum += sample.obstacle_probability;
         room_votes[sample.room_id] += 1;
+        entity_votes[sample.entity_id] += 1;
         cross_floor = cross_floor || sample.is_cross_floor;
         switch (sample.label) {
             case VoxelLabel::Free: ++free_count; break;
@@ -731,6 +733,16 @@ void OctreeManager::aggregateSampleSemantics(int node_index, const std::vector<P
         }
     }
     node.room_id = best_room;
+
+    uint32_t best_entity = node.dominant_entity_id;
+    best_votes = -1;
+    for (const auto& vote : entity_votes) {
+        if (vote.second > best_votes) {
+            best_votes = vote.second;
+            best_entity = vote.first;
+        }
+    }
+    node.dominant_entity_id = best_entity;
 }
 
 void OctreeManager::computeLeafGeometryStats(int node_index, const std::vector<PointCloudSample>& samples) {

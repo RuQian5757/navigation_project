@@ -62,6 +62,7 @@ struct MLResult {
 
 struct PointCloudSample {
     Point3D point;
+    uint32_t entity_id = 0;
     int room_id = 0;
     VoxelLabel label = VoxelLabel::Free;
     float obstacle_probability = 0.0f;
@@ -102,6 +103,7 @@ struct OctreeNode {
     int point_count = 0;
     float node_volume = 0.0f;
     float density = 0.0f;
+    uint32_t dominant_entity_id = 0;
     Point3D centroid;
     Point3D avg_normal;
     std::array<float, 3> covariance_eigenvalues = {0.0f, 0.0f, 0.0f};

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cctype>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -51,6 +52,13 @@ void AppendPoint(pcl::PointCloud<pcl::PointXYZ> &_cloud,
   _cloud.emplace_back(static_cast<float>(_x),
                       static_cast<float>(_y),
                       static_cast<float>(_z));
+}
+
+std::string ToLower(std::string _text)
+{
+  std::transform(_text.begin(), _text.end(), _text.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return _text;
 }
 } // namespace
 
@@ -207,12 +215,20 @@ bool DynamicWorldCloud::BuildEntityLocalCloud(
   cache.model_entity = modelEntity;
   cache.scoped_name = gz::sim::scopedName(_collisionEntity, _ecm);
   cache.local_cloud = std::move(localCloud);
+  const PointSemantic semantic =
+      this->InferSemantics(cache.scoped_name, *geometry, key);
+  cache.label = semantic.label;
+  cache.obstacle_probability = semantic.obstacle_probability;
+  cache.entity_id = semantic.entity_id;
   cache.local_cloud.width = static_cast<uint32_t>(cache.local_cloud.size());
   cache.local_cloud.height = 1;
   cache.local_cloud.is_dense = true;
 
   std::cerr << "[DynamicWorldCloud] Cached local cloud for "
             << cache.scoped_name << " points=" << cache.local_cloud.size()
+            << " label=" << cache.label
+            << " obstacle_probability=" << cache.obstacle_probability
+            << " entity_id=" << cache.entity_id
             << "\n";
 
   this->entity_clouds_.emplace(key, std::move(cache));
@@ -491,6 +507,37 @@ pcl::PointXYZ DynamicWorldCloud::TransformLocalToWorld(
                        static_cast<float>(world.Z()));
 }
 
+DynamicWorldCloud::PointSemantic DynamicWorldCloud::InferSemantics(
+    const std::string &_scopedName,
+    const sdf::Geometry &_geometry,
+    uint64_t _entityKey) const
+{
+  PointSemantic semantic;
+  semantic.entity_id = static_cast<uint32_t>(_entityKey & 0xffffffffULL);
+
+  const std::string name = ToLower(_scopedName);
+  if (name.find("stair") != std::string::npos ||
+      name.find("stairs") != std::string::npos)
+  {
+    semantic.label = 2;
+    semantic.obstacle_probability = 0.25f;
+  }
+  else if (name.find("floor") != std::string::npos ||
+           name.find("ground") != std::string::npos ||
+           _geometry.Type() == sdf::GeometryType::PLANE)
+  {
+    semantic.label = 0;
+    semantic.obstacle_probability = 0.05f;
+  }
+  else
+  {
+    semantic.label = 1;
+    semantic.obstacle_probability = 0.95f;
+  }
+
+  return semantic;
+}
+
 void DynamicWorldCloud::PostUpdate(
     const gz::sim::UpdateInfo &_info,
     const gz::sim::EntityComponentManager &_ecm)
@@ -579,6 +626,8 @@ void DynamicWorldCloud::RebuildGlobalCloud(
 
   this->global_cloud_.clear();
   this->global_cloud_.reserve(totalPoints);
+  this->global_semantics_.clear();
+  this->global_semantics_.reserve(totalPoints);
 
   for (const auto &[_, cache] : this->entity_clouds_)
   {
@@ -594,6 +643,8 @@ void DynamicWorldCloud::RebuildGlobalCloud(
     {
       this->global_cloud_.push_back(
           this->TransformLocalToWorld(localPoint, worldPose));
+      this->global_semantics_.push_back(
+          PointSemantic{cache.label, cache.obstacle_probability, cache.entity_id});
     }
   }
 
@@ -684,7 +735,10 @@ gz::msgs::PointCloudPacked DynamicWorldCloud::BuildPointCloudMessage() const
   gz::msgs::PointCloudPacked msg;
   gz::msgs::InitPointCloudPacked(
       msg, "world", false,
-      {{"xyz", gz::msgs::PointCloudPacked::Field::FLOAT32}});
+      {{"xyz", gz::msgs::PointCloudPacked::Field::FLOAT32},
+       {"label", gz::msgs::PointCloudPacked::Field::UINT32},
+       {"obstacle_probability", gz::msgs::PointCloudPacked::Field::FLOAT32},
+       {"entity_id", gz::msgs::PointCloudPacked::Field::UINT32}});
 
   const std::size_t sourceCount = this->global_cloud_.size();
   const std::size_t publishCount =
@@ -705,9 +759,20 @@ gz::msgs::PointCloudPacked DynamicWorldCloud::BuildPointCloudMessage() const
     const std::size_t sourceIndex =
         publishCount == sourceCount ? i : (i * sourceCount) / publishCount;
     const auto &pt = this->global_cloud_[sourceIndex];
+    const PointSemantic semantic =
+        sourceIndex < this->global_semantics_.size()
+            ? this->global_semantics_[sourceIndex]
+            : PointSemantic{};
     const std::size_t offset = i * msg.point_step();
     const float xyz[3] = {pt.x, pt.y, pt.z};
     std::memcpy(msg.mutable_data()->data() + offset, xyz, sizeof(xyz));
+    std::memcpy(msg.mutable_data()->data() + offset + 12,
+                &semantic.label, sizeof(semantic.label));
+    std::memcpy(msg.mutable_data()->data() + offset + 16,
+                &semantic.obstacle_probability,
+                sizeof(semantic.obstacle_probability));
+    std::memcpy(msg.mutable_data()->data() + offset + 20,
+                &semantic.entity_id, sizeof(semantic.entity_id));
   }
 
   return msg;

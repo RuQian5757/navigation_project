@@ -153,6 +153,8 @@ void testLeafFeatureCSVExport() {
     leaf.max[0] = 0.5f;
     leaf.max[1] = 0.5f;
     leaf.max[2] = 0.5f;
+    leaf.node_index = 7;
+    leaf.entity_id = 99;
     leaf.morton_code = 42;
     leaf.depth = 3;
     leaf.num_points = 12;
@@ -175,9 +177,40 @@ void testLeafFeatureCSVExport() {
     std::string row;
     std::getline(in, header);
     std::getline(in, row);
-    assert(header.find("num_points,voxel_volume,density") == 0);
+    assert(header.find("node_index,entity_id,morton_code,min_x") == 0);
+    assert(header.find("story_index,story_local_z") != std::string::npos);
+    assert(header.find("num_points,voxel_volume,density") != std::string::npos);
     assert(header.rfind("label,obstacle_probability") != std::string::npos);
     assert(!row.empty());
+}
+
+void testWeakLabelExport() {
+    LeafNode free_leaf;
+    free_leaf.node_index = 1;
+    free_leaf.num_points = 10;
+    free_leaf.min[0] = -0.5f;
+    free_leaf.min[1] = -0.5f;
+    free_leaf.min[2] = 0.0f;
+    free_leaf.max[0] = 0.5f;
+    free_leaf.max[1] = 0.5f;
+    free_leaf.max[2] = 0.2f;
+    free_leaf.center[2] = 0.1f;
+    free_leaf.avg_normal[2] = 1.0f;
+    free_leaf.pca_flatness = 0.8f;
+
+    LeafNode obstacle_leaf = free_leaf;
+    obstacle_leaf.node_index = 2;
+    obstacle_leaf.center[2] = 1.0f;
+    obstacle_leaf.avg_normal[0] = 1.0f;
+    obstacle_leaf.avg_normal[2] = 0.0f;
+
+    std::vector<LeafNode> leaves{free_leaf, obstacle_leaf};
+    assignWeakLabels(leaves);
+
+    assert(leaves[0].label == static_cast<int>(VoxelLabel::Free));
+    assert(leaves[0].obstacle_probability < 0.2f);
+    assert(leaves[1].label == static_cast<int>(VoxelLabel::Obstacle));
+    assert(leaves[1].obstacle_probability > 0.7f);
 }
 
 void testLeafPcaGeometryStats() {
@@ -221,6 +254,7 @@ int main() {
     testSemanticPointCloudInitialization();
     testDynamicIncrementalUpdateWithML();
     testLeafFeatureCSVExport();
+    testWeakLabelExport();
     testLeafPcaGeometryStats();
     std::cout << "All Octree tests passed." << std::endl;
     return 0;
