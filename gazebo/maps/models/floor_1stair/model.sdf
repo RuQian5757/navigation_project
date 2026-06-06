@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<sdf version="1.11">
+  <model name="floor_1stair">
+    <link name="body">
+      <inertial auto="true" />
+      <collision name="collision">
+        <density>10.0</density>
+        <geometry>
+          <mesh optimization="convex_decomposition">
+            <uri>models://floor_1stair/mesh.stl</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>models://floor_1stair/mesh.stl</uri>
+          </mesh>
+        </geometry>
+          <material>
+            <ambient>0.45 0.45 0.45 1</ambient>
+            <diffuse>0.55 0.55 0.55 1</diffuse>
+            <specular>0.15 0.15 0.15 1</specular>
+          </material>
+      </visual>
+    </link>
+  </model>
+</sdf>
