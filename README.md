@@ -25,8 +25,8 @@ tests/test_octree.cpp                 Octree 單元測試
 dynamic_world_cloud/                  Gazebo system plugin
 gazebo/maps/warehouse_world.sdf       測試用室內倉庫世界
 scripts/visualize_octree_gazebo.cpp   即時 Gazebo Octree viewer
-scripts/visualize_octree_pcl.cpp      離線 PCD Octree viewer
-scripts/visualize_pointcloud_realtime.py 舊版 Python 點雲 viewer
+scripts/visualize_pointcloud_realtime.py Python 即時點雲 viewer
+scripts/run_visualization.sh          Octree / pointcloud 共用啟動腳本
 docs/                                 設計與操作文件
 ```
 
@@ -80,26 +80,23 @@ Terminal 1：啟動 Gazebo simulation。
 Terminal 2：啟動即時 Octree 視覺化。
 
 ```bash
-./build/octree_viewer/visualize_octree_gazebo \
-  --partition dynamic_cloud_test \
-  --topic /world/dynamic_cloud \
-  --no-points \
-  --voxel-mode center-boxes \
-  --max-voxels 2000 \
-  --max-render-points 80000 \
-  --rebuild-hz 1
+./scripts/run_visualization.sh octree
 ```
 
 如果畫面太卡，改用較輕量模式：
 
 ```bash
-./build/octree_viewer/visualize_octree_gazebo \
-  --partition dynamic_cloud_test \
-  --no-points \
-  --voxel-mode centers \
-  --max-voxels 3000 \
-  --max-render-points 40000 \
-  --rebuild-hz 0.5
+OCTREE_VOXEL_MODE=centers \
+OCTREE_MAX_VOXELS=3000 \
+OCTREE_MAX_RENDER_POINTS=40000 \
+OCTREE_REBUILD_HZ=0.5 \
+./scripts/run_visualization.sh octree
+```
+
+若只想看原始 pointcloud：
+
+```bash
+./scripts/run_visualization.sh pointcloud
 ```
 
 ## Gazebo 點雲資料流
@@ -163,6 +160,13 @@ Viewer 參數：
 - `--voxel-mode`：`centers`、`boxes`、`hybrid`、`center-boxes`。
 - `--no-points`：不顯示原始白色點雲。
 - `--label-color`：用語義 label 上色，而不是 Octree depth。
+
+一般操作建議優先改 [scripts/run_visualization.sh](scripts/run_visualization.sh) 上方的參數設定區，或用環境變數覆寫，例如：
+
+```bash
+OCTREE_MAX_VOXELS=1000 ./scripts/run_visualization.sh octree
+POINTCLOUD_POINT_SIZE=2 ./scripts/run_visualization.sh pointcloud
+```
 
 ## 狀態與後續工作
 

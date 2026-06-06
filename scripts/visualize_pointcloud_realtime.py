@@ -2,36 +2,25 @@
 """
 Realtime 3D point cloud viewer for DynamicWorldCloud.
 
-Default mode subscribes directly to Gazebo Transport topic /world/dynamic_cloud.
-The old TCP bridge mode is still available with --source tcp.
+Subscribes directly to Gazebo Transport topic /world/dynamic_cloud.
 """
 import argparse
 import os
-import socket
-import struct
 import sys
 import threading
 import time
 
 import numpy as np
 
-try:
-    import pyvista as pv
-except ImportError:
-    print('PyVista not found. Install with: pip install pyvista')
-    raise
+pv = None
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Realtime DynamicWorldCloud 3D viewer')
-    parser.add_argument('--source', choices=('gz', 'tcp'), default='gz',
-                        help='Input source: Gazebo Transport topic or legacy TCP bridge')
     parser.add_argument('--topic', default='/world/dynamic_cloud',
                         help='Gazebo Transport PointCloudPacked topic')
     parser.add_argument('--partition', default='dynamic_cloud_test',
                         help='Gazebo Transport partition; must match run_gazebo.sh')
-    parser.add_argument('--host', default='127.0.0.1', help='TCP bridge host')
-    parser.add_argument('--port', default=9000, type=int, help='TCP bridge port')
     parser.add_argument('--point-size', default=3, type=int, help='Rendered point size')
     parser.add_argument('--cmap', default='viridis', help='Colormap for z elevation')
     parser.add_argument('--update-rate', default=20.0, type=float,
@@ -89,12 +78,18 @@ def parse_pointcloud_packed(msg):
         offsets[field.name] = int(field.offset)
         datatypes[field.name] = int(field.datatype)
 
-    if not all(axis in offsets for axis in ('x', 'y', 'z')):
-        raise ValueError('PointCloudPacked does not contain x/y/z fields')
-
     float32_type = 6
-    if any(datatypes.get(axis) != float32_type for axis in ('x', 'y', 'z')):
-        raise ValueError('Only FLOAT32 x/y/z fields are supported')
+    if 'xyz' in offsets:
+        if datatypes.get('xyz') != float32_type:
+            raise ValueError('Only FLOAT32 xyz fields are supported')
+        xyz_offset = offsets['xyz']
+        axis_offsets = [xyz_offset, xyz_offset + 4, xyz_offset + 8]
+    else:
+        if not all(axis in offsets for axis in ('x', 'y', 'z')):
+            raise ValueError('PointCloudPacked does not contain xyz or x/y/z fields')
+        if any(datatypes.get(axis) != float32_type for axis in ('x', 'y', 'z')):
+            raise ValueError('Only FLOAT32 x/y/z fields are supported')
+        axis_offsets = [offsets['x'], offsets['y'], offsets['z']]
 
     required = point_count * int(msg.point_step)
     if len(msg.data) < required:
@@ -103,8 +98,7 @@ def parse_pointcloud_packed(msg):
     raw = np.frombuffer(msg.data, dtype=np.uint8, count=required)
     rows = raw.reshape(point_count, int(msg.point_step))
     points = np.empty((point_count, 3), dtype=np.float32)
-    for column, axis in enumerate(('x', 'y', 'z')):
-        start = offsets[axis]
+    for column, start in enumerate(axis_offsets):
         axis_bytes = rows[:, start:start + 4].copy()
         points[:, column] = axis_bytes.view(np.float32).reshape(-1)
 
@@ -148,80 +142,6 @@ class GazeboPointCloudSubscriber:
         print(f'✓ Subscribed to {self.topic} on GZ_PARTITION={self.partition}')
 
 
-class TcpPointCloudSubscriber:
-    def __init__(self, host, port, buffer, max_render_points):
-        self.host = host
-        self.port = port
-        self.buffer = buffer
-        self.max_render_points = max_render_points
-        self.sock = None
-        self.running = True
-        self.thread = None
-
-    def start(self):
-        self.thread = threading.Thread(target=self.recv_loop, daemon=True)
-        self.thread.start()
-
-    def stop(self):
-        self.running = False
-        if self.sock:
-            try:
-                self.sock.close()
-            except OSError:
-                pass
-        if self.thread:
-            self.thread.join(timeout=2.0)
-
-    def connect(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        self.sock.settimeout(1.0)
-        self.sock.connect((self.host, self.port))
-        self.buffer.set_status(f'connected tcp {self.host}:{self.port}')
-        print(f'✓ Connected to TCP bridge {self.host}:{self.port}')
-
-    def recv_all(self, size):
-        data = bytearray()
-        while len(data) < size and self.running:
-            try:
-                chunk = self.sock.recv(size - len(data))
-                if not chunk:
-                    return None
-                data.extend(chunk)
-            except socket.timeout:
-                continue
-        return data
-
-    def recv_loop(self):
-        while self.running:
-            try:
-                self.connect()
-                while self.running:
-                    header = self.recv_all(4)
-                    if header is None:
-                        break
-                    (count,) = struct.unpack('!I', header)
-                    if count <= 0:
-                        continue
-                    payload = self.recv_all(count * 3 * 4)
-                    if payload is None:
-                        break
-                    points = np.frombuffer(payload, dtype=np.float32).reshape(-1, 3)
-                    points = points[np.isfinite(points).all(axis=1)]
-                    rendered = downsample_points(points, self.max_render_points)
-                    self.buffer.set_points(rendered, source_points=len(points))
-            except Exception as exc:
-                self.buffer.set_status(f'tcp reconnecting: {exc}')
-                time.sleep(1.0)
-            finally:
-                if self.sock:
-                    try:
-                        self.sock.close()
-                    except OSError:
-                        pass
-                self.sock = None
-
-
 class RealtimePointCloudViewer:
     def __init__(self, args):
         self.args = args
@@ -242,16 +162,9 @@ class RealtimePointCloudViewer:
         self.subscriber = None
 
     def create_subscriber(self):
-        if self.args.source == 'gz':
-            return GazeboPointCloudSubscriber(
-                self.args.topic,
-                self.args.partition,
-                self.buffer,
-                self.args.max_render_points,
-            )
-        return TcpPointCloudSubscriber(
-            self.args.host,
-            self.args.port,
+        return GazeboPointCloudSubscriber(
+            self.args.topic,
+            self.args.partition,
             self.buffer,
             self.args.max_render_points,
         )
@@ -359,5 +272,12 @@ class RealtimePointCloudViewer:
 
 
 if __name__ == '__main__':
-    viewer = RealtimePointCloudViewer(parse_args())
+    args = parse_args()
+    try:
+        import pyvista as _pyvista
+    except ImportError:
+        print('PyVista not found. Install with: pip install pyvista')
+        raise
+    pv = _pyvista
+    viewer = RealtimePointCloudViewer(args)
     viewer.run()

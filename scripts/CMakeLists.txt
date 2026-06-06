@@ -11,30 +11,23 @@ find_package(PCL REQUIRED COMPONENTS common io visualization)
 find_package(gz-transport13 REQUIRED)
 find_package(gz-msgs10 REQUIRED)
 
-add_executable(visualize_octree_pcl
-  visualize_octree_pcl.cpp
-  "${PROJECT_ROOT}/src/octree_manager.cpp"
-)
-
 add_executable(visualize_octree_gazebo
   visualize_octree_gazebo.cpp
   "${PROJECT_ROOT}/src/octree_manager.cpp"
 )
 
-foreach(target visualize_octree_pcl visualize_octree_gazebo)
-target_include_directories(${target} PRIVATE
+target_include_directories(visualize_octree_gazebo PRIVATE
   "${PROJECT_ROOT}/include"
   ${PCL_INCLUDE_DIRS}
 )
 
-target_compile_definitions(${target} PRIVATE
+target_compile_definitions(visualize_octree_gazebo PRIVATE
   ${PCL_DEFINITIONS}
 )
 
-target_link_libraries(${target} PRIVATE
+target_link_libraries(visualize_octree_gazebo PRIVATE
   ${PCL_LIBRARIES}
 )
-endforeach()
 
 target_link_libraries(visualize_octree_gazebo PRIVATE
   gz-transport13::gz-transport13

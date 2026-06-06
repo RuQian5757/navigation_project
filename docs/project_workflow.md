@@ -63,6 +63,7 @@ warehouse_world.sdf
 位置：
 
 - `scripts/visualize_octree_gazebo.cpp`
+- `scripts/run_visualization.sh`
 - `scripts/CMakeLists.txt`
 
 功能：
@@ -73,6 +74,18 @@ warehouse_world.sdf
 - 使用收到的點雲建立 Octree。
 - 用 PCLVisualizer 顯示 Octree leaf voxel。
 - 可選擇顯示原始點雲、voxel center、voxel wireframe box。
+
+### 共用視覺化啟動腳本
+
+位置：
+
+- `scripts/run_visualization.sh`
+
+功能：
+
+- 用同一個入口啟動 Octree 3D 顯示或 pointcloud 3D 顯示。
+- 腳本上方集中放置常用參數，並用註解說明每個參數用途。
+- 支援用環境變數臨時覆寫參數，不需要直接修改 C++ 或 Python 程式。
 
 ## 2. Gazebo plugin 載入方式
 
@@ -256,7 +269,12 @@ cmake --build build/octree_viewer
 
 ```text
 build/octree_viewer/visualize_octree_gazebo
-build/octree_viewer/visualize_octree_pcl
+```
+
+確認共用啟動腳本可執行：
+
+```bash
+chmod +x scripts/run_visualization.sh
 ```
 
 ## 6. 執行流程
@@ -303,30 +321,47 @@ GZ_PARTITION=dynamic_cloud_test gz topic -i -t /world/dynamic_cloud
 推薦展示模式：
 
 ```bash
-./build/octree_viewer/visualize_octree_gazebo \
-  --partition dynamic_cloud_test \
-  --topic /world/dynamic_cloud \
-  --no-points \
-  --voxel-mode center-boxes \
-  --max-voxels 2000 \
-  --max-render-points 80000 \
-  --rebuild-hz 1
+./scripts/run_visualization.sh octree
 ```
 
 若覺得邊框太卡，可以改成只顯示 voxel center：
 
 ```bash
-./build/octree_viewer/visualize_octree_gazebo \
-  --partition dynamic_cloud_test \
-  --no-points \
-  --voxel-mode centers \
-  --max-voxels 6000 \
-  --rebuild-hz 1
+OCTREE_VOXEL_MODE=centers \
+OCTREE_MAX_VOXELS=3000 \
+OCTREE_MAX_RENDER_POINTS=40000 \
+OCTREE_REBUILD_HZ=0.5 \
+./scripts/run_visualization.sh octree
 ```
 
-若想保留地圖原始形狀，可拿掉 `--no-points`。
+若想保留地圖原始形狀，可把 `OCTREE_HIDE_POINTS` 設成 `0`。
+
+```bash
+OCTREE_HIDE_POINTS=0 ./scripts/run_visualization.sh octree
+```
+
+### Terminal 3 可替代方案：只顯示原始 pointcloud
+
+```bash
+./scripts/run_visualization.sh pointcloud
+```
 
 ## 7. 視覺化參數
+
+日常操作建議優先使用 `scripts/run_visualization.sh` 上方的參數設定區。常用環境變數如下：
+
+- `GZ_PARTITION_VALUE`：Gazebo Transport partition。
+- `GZ_POINTCLOUD_TOPIC`：點雲 topic。
+- `OCTREE_MAX_DEPTH`：Octree 最大深度。
+- `OCTREE_MAX_VOXELS`：Octree viewer 最多顯示的 leaf voxel 數。
+- `OCTREE_MAX_RENDER_POINTS`：Octree viewer 最多使用多少點重建 Octree。
+- `OCTREE_REBUILD_HZ`：Octree viewer 每秒最多更新次數。
+- `OCTREE_VOXEL_MODE`：`centers`、`boxes`、`hybrid`、`center-boxes`。
+- `OCTREE_HIDE_POINTS`：`1` 隱藏原始點雲，`0` 顯示原始點雲。
+- `POINTCLOUD_POINT_SIZE`：Python pointcloud viewer 點大小。
+- `POINTCLOUD_MAX_RENDER_POINTS`：Python pointcloud viewer 最多顯示點數。
+
+底層 `visualize_octree_gazebo` 仍支援下列 CLI 參數，方便需要直接呼叫 binary 時使用。
 
 `--partition`
 
@@ -398,26 +433,7 @@ Viewer 每秒最多解析、重建 Octree、刷新畫面的次數。預設是 `1
 
 PCL 的 point size 是螢幕像素大小，不是真實世界尺寸。因此要看 voxel 實際體積，請使用 `--voxel-mode boxes` 或 `--voxel-mode center-boxes`。
 
-## 9. 離線 PCD 視覺化
-
-若 plugin 啟用 PCD 儲存：
-
-```xml
-<pcd_save_interval>5.0</pcd_save_interval>
-<pcd_directory>./pcd</pcd_directory>
-```
-
-可以使用離線 viewer：
-
-```bash
-./build/octree_viewer/visualize_octree_pcl ./pcd/dynamic_world_cloud_5.pcd \
-  --max-depth 9 \
-  --max-voxels 10000
-```
-
-此工具會讀取 PCD，建立 Octree，並顯示原始點雲與 voxel wireframe。
-
-## 10. 效能調整建議
+## 9. 效能調整建議
 
 如果 Gazebo 或 viewer 很卡，依序調整：
 
@@ -432,16 +448,14 @@ PCL 的 point size 是螢幕像素大小，不是真實世界尺寸。因此要�
 範例，低負載展示：
 
 ```bash
-./build/octree_viewer/visualize_octree_gazebo \
-  --partition dynamic_cloud_test \
-  --no-points \
-  --voxel-mode centers \
-  --max-voxels 3000 \
-  --max-render-points 40000 \
-  --rebuild-hz 0.5
+OCTREE_VOXEL_MODE=centers \
+OCTREE_MAX_VOXELS=3000 \
+OCTREE_MAX_RENDER_POINTS=40000 \
+OCTREE_REBUILD_HZ=0.5 \
+./scripts/run_visualization.sh octree
 ```
 
-## 11. 常見問題
+## 10. 常見問題
 
 ### 看不到 `/world/dynamic_cloud`
 
@@ -496,5 +510,5 @@ Viewer 啟動時也要指定：
 推薦：
 
 ```bash
---no-points --voxel-mode center-boxes --max-voxels 2000
+OCTREE_HIDE_POINTS=1 OCTREE_VOXEL_MODE=center-boxes OCTREE_MAX_VOXELS=2000 ./scripts/run_visualization.sh octree
 ```
