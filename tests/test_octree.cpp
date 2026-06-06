@@ -85,12 +85,71 @@ void testTraversalCost() {
     assert(obstacle_cost > free_cost);
 }
 
+void testSemanticPointCloudInitialization() {
+    std::vector<PointCloudSample> samples;
+    for (int i = 0; i < 24; ++i) {
+        PointCloudSample sample;
+        sample.point = {0.05f * static_cast<float>(i), 0.0f, 0.5f};
+        sample.room_id = 3;
+        sample.label = VoxelLabel::Stair;
+        sample.obstacle_probability = 0.15f;
+        sample.has_semantics = true;
+        sample.is_cross_floor = true;
+        samples.push_back(sample);
+    }
+
+    OctreeManager octree;
+    octree.initialize(samples);
+    auto leaf = octree.findLeafIndexByPoint(samples.front().point);
+    assert(leaf.has_value());
+    const OctreeNode* node = octree.getNode(leaf.value());
+    assert(node != nullptr);
+    assert(node->label == VoxelLabel::Stair);
+    assert(node->room_id == 3);
+    assert(octree.isCrossFloorConnected(leaf.value()));
+}
+
+void testDynamicIncrementalUpdateWithML() {
+    std::vector<Point3D> points;
+    for (int i = 0; i < 40; ++i) {
+        points.push_back({0.1f * static_cast<float>(i), 0.0f, 1.0f});
+    }
+
+    OctreeManager octree;
+    octree.setMLPredictor([](const OctreeNode& node) {
+        MLResult result;
+        result.room_id = 7;
+        result.label = node.point_count > 2 ? VoxelLabel::Obstacle : VoxelLabel::Free;
+        result.obstacle_probability = node.point_count > 2 ? 0.85f : 0.05f;
+        return result;
+    });
+    octree.initialize(points);
+
+    auto leaf = octree.findLeafIndexByPoint({1.0f, 0.0f, 1.0f});
+    assert(leaf.has_value());
+    PointCloudSample dynamic_sample;
+    dynamic_sample.point = {1.0f, 0.0f, 1.0f};
+    dynamic_sample.room_id = 7;
+    dynamic_sample.label = VoxelLabel::Obstacle;
+    dynamic_sample.obstacle_probability = 0.9f;
+    dynamic_sample.has_semantics = true;
+    octree.updateFromPointCloud(std::vector<PointCloudSample>{dynamic_sample});
+
+    const OctreeNode* node = octree.getNode(leaf.value());
+    assert(node != nullptr);
+    assert(node->dynamic);
+    assert(node->obstacle_probability >= 0.85f);
+    assert(octree.computeTraversalCost(leaf.value()) > 1.0f);
+}
+
 int main() {
     testAdaptiveSubdivision();
     testLabelPropagation();
     testRoomClosureConstraint();
     testCrossFloorConnectivity();
     testTraversalCost();
+    testSemanticPointCloudInitialization();
+    testDynamicIncrementalUpdateWithML();
     std::cout << "All Octree tests passed." << std::endl;
     return 0;
 }

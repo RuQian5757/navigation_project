@@ -3,69 +3,149 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <queue>
+#include <unordered_set>
 
 namespace navigation {
 
-static float clampFloat(float value, float min_value, float max_value) {
+namespace {
+
+constexpr float kEpsilon = 1e-4f;
+constexpr float kBlockedCost = 1e6f;
+
+float clampFloat(float value, float min_value, float max_value) {
     return std::max(min_value, std::min(max_value, value));
 }
 
+float distanceBetween(const Point3D& a, const Point3D& b) {
+    const float dx = a.x - b.x;
+    const float dy = a.y - b.y;
+    const float dz = a.z - b.z;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+float maxExtent(const BBox& bounds) {
+    return std::max({bounds.width(), bounds.depth(), bounds.height()});
+}
+
+bool nearlyTouches(float a, float b) {
+    return std::abs(a - b) <= 2.0f * kEpsilon;
+}
+
+bool rangesOverlap(float a_min, float a_max, float b_min, float b_max) {
+    return std::max(a_min, b_min) <= std::min(a_max, b_max) + 2.0f * kEpsilon;
+}
+
+std::vector<PointCloudSample> toSamples(const std::vector<Point3D>& points) {
+    std::vector<PointCloudSample> samples;
+    samples.reserve(points.size());
+    for (const Point3D& point : points) {
+        PointCloudSample sample;
+        sample.point = point;
+        samples.push_back(sample);
+    }
+    return samples;
+}
+
+} // namespace
+
 OctreeManager::OctreeManager(int max_depth)
-    : max_depth_(max_depth) {
+    : config_{} {
+    config_.max_depth = max_depth;
+}
+
+OctreeManager::OctreeManager(OctreeConfig config)
+    : config_(config) {
 }
 
 void OctreeManager::initialize(const std::vector<Point3D>& points) {
-    buildLinearOctree(points);
-    for (int i = 0, n = static_cast<int>(nodes_.size()); i < n; ++i) {
-        updateNeighborLinks(i);
+    initialize(toSamples(points));
+}
+
+void OctreeManager::initialize(const std::vector<PointCloudSample>& samples) {
+    buildLinearOctree(samples);
+    rebuildLeafIndex();
+    refreshAllNeighborLinks();
+
+    std::vector<int> leaves;
+    leaves.reserve(nodes_.size());
+    for (int i = 0; i < static_cast<int>(nodes_.size()); ++i) {
+        if (nodes_[i].leaf) {
+            leaves.push_back(i);
+        }
     }
+    applyMLToLeaves(leaves);
 }
 
 void OctreeManager::updateFromPointCloud(const std::vector<Point3D>& updated_points) {
-    // 首先檢查是否需要重新細分根節點
-    if (nodes_.size() == 1 && nodes_[0].leaf) {
-        // 如果只有根節點且是葉節點，根據新點雲重新構建
-        buildLinearOctree(updated_points);
+    updateFromPointCloud(toSamples(updated_points));
+}
+
+void OctreeManager::updateFromPointCloud(const std::vector<PointCloudSample>& updated_samples) {
+    if (nodes_.empty()) {
+        initialize(updated_samples);
         return;
     }
 
-    std::vector<int> touched;
-    touched.reserve(updated_points.size());
+    bool outside_root = false;
+    for (const PointCloudSample& sample : updated_samples) {
+        if (!root_bounds_.contains(sample.point)) {
+            outside_root = true;
+            break;
+        }
+    }
 
-    for (const auto& point : updated_points) {
-        auto leaf_index = findLeafIndexByPoint(point);
+    if (outside_root) {
+        buildLinearOctree(updated_samples);
+        rebuildLeafIndex();
+        refreshAllNeighborLinks();
+        return;
+    }
+
+    std::unordered_set<int> touched_set;
+    for (const PointCloudSample& sample : updated_samples) {
+        const auto leaf_index = findLeafIndexByPoint(sample.point);
         if (!leaf_index.has_value()) {
             continue;
         }
 
-        int index = leaf_index.value();
-        OctreeNode& node = nodes_[index];
-        node.point_count += 1;
-        node.node_volume = node.bounds.volume();
-        
-        // 檢查是否需要細分此節點
-        if (node.leaf && node.depth < max_depth_) {
-            float max_extent = std::max({node.bounds.width(), node.bounds.depth(), node.bounds.height()});
-            float density = (node.node_volume > 0.0f) ? (node.point_count / node.node_volume) : 0.0f;
-            
-            if (shouldSubdivide(node.point_count, max_extent, density, node.depth)) {
-                // 需要細分，但在動態更新中這比較複雜
-                // 暫時只標記為已更新
-            }
+        OctreeNode& leaf = nodes_[leaf_index.value()];
+        leaf.dynamic = true;
+        leaf.point_count += 1;
+        leaf.density = leaf.node_volume > 0.0f ? leaf.point_count / leaf.node_volume : 0.0f;
+
+        if (sample.has_semantics) {
+            leaf.room_id = sample.room_id;
+            leaf.label = sample.label;
+            leaf.obstacle_probability = clampFloat(sample.obstacle_probability, 0.0f, 1.0f);
+            leaf.is_cross_floor = sample.is_cross_floor || sample.label == VoxelLabel::Stair;
+        } else {
+            leaf.obstacle_probability = clampFloat(
+                std::max(leaf.obstacle_probability * config_.dynamic_decay, 0.35f), 0.0f, 1.0f);
         }
-        
-        touched.push_back(index);
+        touched_set.insert(leaf_index.value());
     }
 
-    // 移除重複
-    std::sort(touched.begin(), touched.end());
-    touched.erase(std::unique(touched.begin(), touched.end()), touched.end());
+    std::vector<int> touched(touched_set.begin(), touched_set.end());
+    applyMLToLeaves(touched);
+
+    for (int index : touched) {
+        updateNeighborLinks(index);
+        for (int neighbor : nodes_[index].orthogonal_neighbors) {
+            if (neighbor >= 0) {
+                updateNeighborLinks(neighbor);
+            }
+        }
+    }
 
     for (int index : touched) {
         floodFillLabelPropagation(index);
-        updateNeighborLinks(index);
     }
+}
+
+void OctreeManager::setMLPredictor(MLPredictor predictor) {
+    ml_predictor_ = std::move(predictor);
 }
 
 std::array<int, NEIGHBOR_COUNT> OctreeManager::getOrthogonalNeighbors(int node_index) const {
@@ -74,10 +154,14 @@ std::array<int, NEIGHBOR_COUNT> OctreeManager::getOrthogonalNeighbors(int node_i
 }
 
 std::optional<int> OctreeManager::findLeafIndexByPoint(const Point3D& point) const {
-    if (nodes_.empty()) {
+    if (nodes_.empty() || !root_bounds_.contains(point)) {
         return std::nullopt;
     }
-    return findContainingLeaf(0, point);
+    const int result = findContainingLeaf(0, point);
+    if (result < 0) {
+        return std::nullopt;
+    }
+    return result;
 }
 
 bool OctreeManager::isCrossFloorConnected(int node_index) const {
@@ -92,20 +176,41 @@ float OctreeManager::computeTraversalCost(int node_index, bool allow_cross_floor
     assert(node_index >= 0 && node_index < static_cast<int>(nodes_.size()));
     const OctreeNode& node = nodes_[node_index];
 
-    if (node.label == VoxelLabel::Obstacle) {
-        return 1e6f;
+    if (node.label == VoxelLabel::Obstacle || node.obstacle_probability >= 0.95f) {
+        return kBlockedCost;
     }
 
-    float cost = 1.0f;
-    cost += node.obstacle_probability * 8.0f;
-    cost += (node.depth * 0.05f);
-    if (node.label == VoxelLabel::Stair) {
-        cost += 2.0f;
+    const float size_penalty = 0.08f * static_cast<float>(node.depth);
+    const float probability_penalty = 9.0f * node.obstacle_probability;
+    const float stair_penalty = node.label == VoxelLabel::Stair ? 1.75f : 0.0f;
+    const float cross_floor_penalty = node.is_cross_floor && !allow_cross_floor ? 5.0f : 0.0f;
+    const float dynamic_penalty = node.dynamic ? 0.75f : 0.0f;
+    return 1.0f + size_penalty + probability_penalty + stair_penalty + cross_floor_penalty + dynamic_penalty;
+}
+
+std::optional<TraversalInfo> OctreeManager::computeTraversalInfo(int from_node, int to_node, bool allow_cross_floor) const {
+    if (from_node < 0 || from_node >= static_cast<int>(nodes_.size()) ||
+        to_node < 0 || to_node >= static_cast<int>(nodes_.size())) {
+        return std::nullopt;
     }
-    if (node.is_cross_floor && !allow_cross_floor) {
-        cost += 5.0f;
+
+    const OctreeNode& from = nodes_[from_node];
+    const OctreeNode& to = nodes_[to_node];
+    if (to.label == VoxelLabel::Obstacle || to.obstacle_probability >= 0.95f) {
+        return std::nullopt;
     }
-    return cost;
+    if (from.room_id != to.room_id && !(isCrossFloorConnected(from_node) && isCrossFloorConnected(to_node))) {
+        return std::nullopt;
+    }
+
+    TraversalInfo info;
+    info.distance = distanceBetween(from.bounds.center(), to.bounds.center());
+    info.obstacle_probability = to.obstacle_probability;
+    info.label = to.label;
+    info.is_cross_floor = to.is_cross_floor;
+    info.room_id = to.room_id;
+    info.cost = info.distance * computeTraversalCost(to_node, allow_cross_floor);
+    return info;
 }
 
 void OctreeManager::assignLeafLabel(int node_index, VoxelLabel label, float obstacle_probability, int room_id, bool is_cross_floor) {
@@ -114,15 +219,16 @@ void OctreeManager::assignLeafLabel(int node_index, VoxelLabel label, float obst
     node.label = label;
     node.obstacle_probability = clampFloat(obstacle_probability, 0.0f, 1.0f);
     node.room_id = room_id;
-    node.is_cross_floor = is_cross_floor;
+    node.is_cross_floor = is_cross_floor || label == VoxelLabel::Stair;
     if (node.leaf) {
+        updateNeighborLinks(node_index);
         floodFillLabelPropagation(node_index);
     }
 }
 
 int OctreeManager::getLeafCount() const {
     int leaf_count = 0;
-    for (const auto& node : nodes_) {
+    for (const OctreeNode& node : nodes_) {
         if (node.leaf) {
             ++leaf_count;
         }
@@ -141,93 +247,88 @@ const OctreeNode* OctreeManager::getNode(int index) const {
     return &nodes_[index];
 }
 
-void OctreeManager::buildLinearOctree(const std::vector<Point3D>& points) {
+void OctreeManager::buildLinearOctree(const std::vector<PointCloudSample>& samples) {
     nodes_.clear();
-    nodes_.reserve(1024);
+    leaf_by_code_.clear();
+    nodes_.reserve(std::max<std::size_t>(1024, samples.size() * 2));
 
-    // 計算點雲的實際邊界
-    if (points.empty()) {
-        // 如果沒有點，使用默認邊界
-        OctreeNode root;
-        root.bounds = BBox{{0.0f, 0.0f, 0.0f}, {20.0f, 20.0f, 5.0f}};
-        root.depth = 0;
-        root.node_volume = root.bounds.volume();
-        root.point_count = 0;
-        root.morton_code = computeMortonCode(root.bounds.center(), 0);
-        nodes_.push_back(root);
-        return;
+    if (samples.empty()) {
+        root_bounds_ = BBox{{0.0f, 0.0f, 0.0f}, {20.0f, 20.0f, 5.0f}};
+    } else {
+        float min_x = samples.front().point.x;
+        float max_x = samples.front().point.x;
+        float min_y = samples.front().point.y;
+        float max_y = samples.front().point.y;
+        float min_z = samples.front().point.z;
+        float max_z = samples.front().point.z;
+        for (const PointCloudSample& sample : samples) {
+            min_x = std::min(min_x, sample.point.x);
+            max_x = std::max(max_x, sample.point.x);
+            min_y = std::min(min_y, sample.point.y);
+            max_y = std::max(max_y, sample.point.y);
+            min_z = std::min(min_z, sample.point.z);
+            max_z = std::max(max_z, sample.point.z);
+        }
+
+        const float max_span = std::max({max_x - min_x, max_y - min_y, max_z - min_z, 1.0f});
+        const float padding = std::max(0.5f, 0.02f * max_span);
+        root_bounds_ = BBox{
+            {min_x - padding, min_y - padding, min_z - padding},
+            {max_x + padding, max_y + padding, max_z + padding},
+        };
     }
 
-    // 找出點雲邊界
-    float min_x = points[0].x, max_x = points[0].x;
-    float min_y = points[0].y, max_y = points[0].y;
-    float min_z = points[0].z, max_z = points[0].z;
-
-    for (const auto& pt : points) {
-        min_x = std::min(min_x, pt.x); max_x = std::max(max_x, pt.x);
-        min_y = std::min(min_y, pt.y); max_y = std::max(max_y, pt.y);
-        min_z = std::min(min_z, pt.z); max_z = std::max(max_z, pt.z);
-    }
-
-    // 增加邊界 padding（每邊 0.5m）確保包含所有點
-    float padding = 0.5f;
     OctreeNode root;
-    root.bounds = BBox{
-        {min_x - padding, min_y - padding, min_z - padding},
-        {max_x + padding, max_y + padding, max_z + padding}
-    };
+    root.bounds = root_bounds_;
     root.depth = 0;
+    root.point_count = static_cast<int>(samples.size());
     root.node_volume = root.bounds.volume();
-    root.point_count = static_cast<int>(points.size());
+    root.density = root.node_volume > 0.0f ? root.point_count / root.node_volume : 0.0f;
     root.morton_code = computeMortonCode(root.bounds.center(), 0);
     nodes_.push_back(root);
-
-    subdivideNode(0, points);
+    aggregateSampleSemantics(0, samples);
+    subdivideNode(0, samples);
 }
 
-void OctreeManager::subdivideNode(int node_index, const std::vector<Point3D>& points) {
-    OctreeNode& node = nodes_[node_index];
-    node.node_volume = node.bounds.volume();
+void OctreeManager::subdivideNode(int node_index, const std::vector<PointCloudSample>& samples) {
+    nodes_[node_index].node_volume = nodes_[node_index].bounds.volume();
+    nodes_[node_index].density = nodes_[node_index].node_volume > 0.0f
+                                      ? nodes_[node_index].point_count / nodes_[node_index].node_volume
+                                      : 0.0f;
 
-    if (node.depth >= max_depth_) {
-        node.leaf = true;
-        return;
-    }
-
-    float max_extent = std::max({node.bounds.width(), node.bounds.depth(), node.bounds.height()});
-    float density = 0.0f;
-    if (node.node_volume > 0.0f) {
-        density = node.point_count / node.node_volume;
-    }
-
-    if (!shouldSubdivide(node.point_count, max_extent, density, node.depth)) {
-        node.leaf = true;
-        return;
-    }
-
-    node.leaf = false;
-    std::array<std::vector<Point3D>, 8> child_points;
-    const Point3D center = node.bounds.center();
-
-    for (const auto& pt : points) {
-        if (!node.bounds.contains(pt)) {
-            continue;
+    bool has_stair_semantics = false;
+    for (const PointCloudSample& sample : samples) {
+        if (sample.has_semantics && (sample.label == VoxelLabel::Stair || sample.is_cross_floor)) {
+            has_stair_semantics = true;
+            break;
         }
-        int octant = getChildOctant(pt, node.bounds);
-        child_points[octant].push_back(pt);
+    }
+
+    if (!shouldSubdivide(nodes_[node_index], has_stair_semantics)) {
+        nodes_[node_index].leaf = true;
+        return;
+    }
+
+    nodes_[node_index].leaf = false;
+    std::array<std::vector<PointCloudSample>, 8> child_samples;
+    const BBox parent_bounds = nodes_[node_index].bounds;
+    const Point3D center = parent_bounds.center();
+
+    for (const PointCloudSample& sample : samples) {
+        if (parent_bounds.contains(sample.point)) {
+            child_samples[getChildOctant(sample.point, parent_bounds)].push_back(sample);
+        }
     }
 
     for (int child = 0; child < 8; ++child) {
-        if (child_points[child].empty()) {
-            node.children[child] = -1;
+        if (child_samples[child].empty()) {
+            nodes_[node_index].children[child] = -1;
             continue;
         }
 
         OctreeNode child_node;
-        child_node.depth = node.depth + 1;
-        child_node.bounds.min = node.bounds.min;
-        child_node.bounds.max = node.bounds.max;
-        const Point3D child_center = computeOctantCenter(node.bounds, child);
+        child_node.depth = nodes_[node_index].depth + 1;
+        child_node.bounds = parent_bounds;
         if (child & 1) {
             child_node.bounds.min.x = center.x;
         } else {
@@ -243,55 +344,75 @@ void OctreeManager::subdivideNode(int node_index, const std::vector<Point3D>& po
         } else {
             child_node.bounds.max.z = center.z;
         }
-        child_node.point_count = static_cast<int>(child_points[child].size());
+        child_node.point_count = static_cast<int>(child_samples[child].size());
         child_node.node_volume = child_node.bounds.volume();
-        child_node.morton_code = computeMortonCode(child_center, child_node.depth);
-        child_node.leaf = true;
+        child_node.density = child_node.node_volume > 0.0f ? child_node.point_count / child_node.node_volume : 0.0f;
+        child_node.morton_code = computeMortonCode(computeOctantCenter(parent_bounds, child), child_node.depth);
 
-        int child_index = static_cast<int>(nodes_.size());
+        const int child_index = static_cast<int>(nodes_.size());
         nodes_.push_back(child_node);
-        node.children[child] = child_index;
-
-        subdivideNode(child_index, child_points[child]);
+        nodes_[node_index].children[child] = child_index;
+        aggregateSampleSemantics(child_index, child_samples[child]);
+        subdivideNode(child_index, child_samples[child]);
     }
-
-    updateNeighborLinks(node_index);
 }
 
-bool OctreeManager::shouldSubdivide(int point_count, float voxel_size, float density, int depth) const {
-    if (point_count < 5) {
+bool OctreeManager::shouldSubdivide(const OctreeNode& node, bool has_stair_semantics) const {
+    if (node.depth >= config_.max_depth || node.point_count < config_.min_points_to_split) {
         return false;
     }
-    if (depth >= max_depth_) {
+
+    const float size = maxExtent(node.bounds);
+    const float target_min = has_stair_semantics ? config_.stair_min_voxel : config_.corridor_min_voxel;
+    const float target_max = has_stair_semantics ? config_.stair_max_voxel : config_.corridor_max_voxel;
+    if (size <= target_min) {
         return false;
     }
-    if (voxel_size <= 0.05f) {
-        return false;
-    }
-    if (density > 250.0f) {
+    if (size > target_max) {
         return true;
     }
-    if (point_count > 30) {
+    if (node.density > config_.dense_points_per_m3) {
         return true;
     }
-    if (voxel_size > 0.3f && point_count > 15) {
-        return true;
+    return node.point_count > config_.dense_points_to_split;
+}
+
+void OctreeManager::rebuildLeafIndex() {
+    leaf_by_code_.clear();
+    leaf_by_code_.reserve(nodes_.size());
+    for (int i = 0; i < static_cast<int>(nodes_.size()); ++i) {
+        if (nodes_[i].leaf) {
+            leaf_by_code_[nodes_[i].morton_code] = i;
+        }
     }
-    if (voxel_size < 0.12f && point_count > 8) {
-        return true;
+}
+
+void OctreeManager::refreshAllNeighborLinks() {
+    for (int i = 0; i < static_cast<int>(nodes_.size()); ++i) {
+        if (nodes_[i].leaf) {
+            updateNeighborLinks(i);
+        }
     }
-    return false;
 }
 
 void OctreeManager::updateNeighborLinks(int node_index) {
-    OctreeNode& node = nodes_[node_index];
-    for (int dir = 0; dir < NEIGHBOR_COUNT; ++dir) {
-        auto neighbor = findNeighborByDirection(node_index, static_cast<NeighborDirection>(dir));
-        node.orthogonal_neighbors[dir] = neighbor.has_value() ? neighbor.value() : -1;
+    if (node_index < 0 || node_index >= static_cast<int>(nodes_.size()) || !nodes_[node_index].leaf) {
+        return;
     }
+
+    std::array<int, NEIGHBOR_COUNT> next;
+    next.fill(-1);
+    for (int dir = 0; dir < NEIGHBOR_COUNT; ++dir) {
+        const auto neighbor = findNeighborByDirection(node_index, static_cast<NeighborDirection>(dir));
+        next[dir] = neighbor.has_value() ? neighbor.value() : -1;
+    }
+    nodes_[node_index].orthogonal_neighbors = next;
 }
 
 int OctreeManager::findContainingLeaf(int node_index, const Point3D& point) const {
+    if (node_index < 0 || node_index >= static_cast<int>(nodes_.size())) {
+        return -1;
+    }
     const OctreeNode& node = nodes_[node_index];
     if (!node.bounds.contains(point)) {
         return -1;
@@ -299,79 +420,263 @@ int OctreeManager::findContainingLeaf(int node_index, const Point3D& point) cons
     if (node.leaf) {
         return node_index;
     }
-    int octant = getChildOctant(point, node.bounds);
-    int child_index = node.children[octant];
-    if (child_index < 0) {
-        return node_index;
+
+    const int octant = getChildOctant(point, node.bounds);
+    const int child_index = node.children[octant];
+    if (child_index >= 0) {
+        const int result = findContainingLeaf(child_index, point);
+        if (result >= 0) {
+            return result;
+        }
     }
-    return findContainingLeaf(child_index, point);
+
+    for (int child : node.children) {
+        const int result = findContainingLeaf(child, point);
+        if (result >= 0) {
+            return result;
+        }
+    }
+    return -1;
 }
 
 std::optional<int> OctreeManager::findNeighborByDirection(int node_index, NeighborDirection dir) const {
     const OctreeNode& node = nodes_[node_index];
-    const Point3D center = node.bounds.center();
-    Point3D target = center;
-    const float step = std::max({node.bounds.width(), node.bounds.depth(), node.bounds.height()}) * 0.51f;
+    const BBox& b = node.bounds;
+    std::array<Point3D, 5> probes;
+    const Point3D c = b.center();
 
     switch (dir) {
-        case POS_X: target.x += step; break;
-        case NEG_X: target.x -= step; break;
-        case POS_Y: target.y += step; break;
-        case NEG_Y: target.y -= step; break;
-        case POS_Z: target.z += step; break;
-        case NEG_Z: target.z -= step; break;
-        default: break;
+        case POS_X:
+        case NEG_X: {
+            const float x = dir == POS_X ? b.max.x + kEpsilon : b.min.x - kEpsilon;
+            probes = {{
+                {x, c.y, c.z},
+                {x, b.min.y + 0.25f * b.depth(), c.z},
+                {x, b.max.y - 0.25f * b.depth(), c.z},
+                {x, c.y, b.min.z + 0.25f * b.height()},
+                {x, c.y, b.max.z - 0.25f * b.height()},
+            }};
+            break;
+        }
+        case POS_Y:
+        case NEG_Y: {
+            const float y = dir == POS_Y ? b.max.y + kEpsilon : b.min.y - kEpsilon;
+            probes = {{
+                {c.x, y, c.z},
+                {b.min.x + 0.25f * b.width(), y, c.z},
+                {b.max.x - 0.25f * b.width(), y, c.z},
+                {c.x, y, b.min.z + 0.25f * b.height()},
+                {c.x, y, b.max.z - 0.25f * b.height()},
+            }};
+            break;
+        }
+        case POS_Z:
+        case NEG_Z: {
+            const float z = dir == POS_Z ? b.max.z + kEpsilon : b.min.z - kEpsilon;
+            probes = {{
+                {c.x, c.y, z},
+                {b.min.x + 0.25f * b.width(), c.y, z},
+                {b.max.x - 0.25f * b.width(), c.y, z},
+                {c.x, b.min.y + 0.25f * b.depth(), z},
+                {c.x, b.max.y - 0.25f * b.depth(), z},
+            }};
+            break;
+        }
+        default:
+            return std::nullopt;
     }
 
-    auto neighbor = findLeafIndexByPoint(target);
-    if (!neighbor.has_value()) {
+    int best = -1;
+    float best_score = std::numeric_limits<float>::max();
+    for (const Point3D& probe : probes) {
+        const auto candidate = findLeafIndexByPoint(probe);
+        if (!candidate.has_value() || candidate.value() == node_index) {
+            continue;
+        }
+        const OctreeNode& other = nodes_[candidate.value()];
+        if (!canTraverseBetween(node, other, dir)) {
+            continue;
+        }
+
+        const float score = distanceBetween(c, other.bounds.center()) + 0.02f * static_cast<float>(other.depth);
+        if (score < best_score) {
+            best_score = score;
+            best = candidate.value();
+        }
+    }
+
+    if (best < 0) {
         return std::nullopt;
     }
-    const OctreeNode& neighbor_node = nodes_[neighbor.value()];
-    if (neighbor_node.room_id != node.room_id) {
-        return std::nullopt;
-    }
-    return neighbor;
+    return best;
 }
 
 void OctreeManager::floodFillLabelPropagation(int start_node) {
-    if (start_node < 0 || start_node >= static_cast<int>(nodes_.size())) {
+    if (start_node < 0 || start_node >= static_cast<int>(nodes_.size()) || !nodes_[start_node].leaf) {
         return;
     }
 
-    std::queue<int> queue;
+    struct QueueItem {
+        int index;
+        int distance;
+    };
+
+    std::queue<QueueItem> queue;
     std::vector<bool> visited(nodes_.size(), false);
-    queue.push(start_node);
+    queue.push({start_node, 0});
     visited[start_node] = true;
 
-    const OctreeNode& start = nodes_[start_node];
+    const OctreeNode start = nodes_[start_node];
     while (!queue.empty()) {
-        int current = queue.front();
+        const QueueItem current = queue.front();
         queue.pop();
-        OctreeNode& node = nodes_[current];
-
-        for (int dir = 0; dir < NEIGHBOR_COUNT; ++dir) {
-            int neighbor_index = node.orthogonal_neighbors[dir];
-            if (neighbor_index < 0 || neighbor_index >= static_cast<int>(nodes_.size())) {
-                continue;
-            }
-            if (visited[neighbor_index]) {
-                continue;
-            }
-            OctreeNode& neighbor = nodes_[neighbor_index];
-            if (neighbor.room_id != start.room_id) {
-                continue;
-            }
-            if (start.label == VoxelLabel::Obstacle && neighbor.obstacle_probability < 0.7f) {
-                neighbor.label = VoxelLabel::Obstacle;
-                neighbor.obstacle_probability = std::max(neighbor.obstacle_probability, 0.7f);
-            }
-            if (neighbor.label == VoxelLabel::Free && start.label == VoxelLabel::Stair) {
-                neighbor.label = VoxelLabel::Stair;
-            }
-            visited[neighbor_index] = true;
-            queue.push(neighbor_index);
+        if (current.distance >= config_.flood_fill_max_depth) {
+            continue;
         }
+
+        const OctreeNode node_snapshot = nodes_[current.index];
+        for (int neighbor_index : node_snapshot.orthogonal_neighbors) {
+            if (neighbor_index < 0 || neighbor_index >= static_cast<int>(nodes_.size()) || visited[neighbor_index]) {
+                continue;
+            }
+
+            OctreeNode& neighbor = nodes_[neighbor_index];
+            if (neighbor.room_id != start.room_id &&
+                !(start.is_cross_floor && neighbor.is_cross_floor)) {
+                continue;
+            }
+
+            const float attenuation = 1.0f - 0.30f * static_cast<float>(current.distance + 1);
+            if (start.label == VoxelLabel::Obstacle) {
+                neighbor.obstacle_probability = std::max(
+                    neighbor.obstacle_probability,
+                    clampFloat(start.obstacle_probability * attenuation, 0.0f, 1.0f));
+                if (neighbor.obstacle_probability >= 0.70f) {
+                    neighbor.label = VoxelLabel::Obstacle;
+                }
+            } else if (start.label == VoxelLabel::Stair && neighbor.label == VoxelLabel::Free) {
+                neighbor.label = VoxelLabel::Stair;
+                neighbor.is_cross_floor = true;
+                neighbor.obstacle_probability = std::min(neighbor.obstacle_probability, 0.35f);
+            }
+
+            visited[neighbor_index] = true;
+            queue.push({neighbor_index, current.distance + 1});
+        }
+    }
+}
+
+void OctreeManager::applyMLToLeaves(const std::vector<int>& leaf_indices) {
+    if (!ml_predictor_) {
+        return;
+    }
+
+    for (int index : leaf_indices) {
+        if (index < 0 || index >= static_cast<int>(nodes_.size()) || !nodes_[index].leaf) {
+            continue;
+        }
+        const MLResult result = ml_predictor_(nodes_[index]);
+        nodes_[index].label = result.label;
+        nodes_[index].obstacle_probability = clampFloat(result.obstacle_probability, 0.0f, 1.0f);
+        nodes_[index].room_id = result.room_id;
+        nodes_[index].is_cross_floor = result.is_cross_floor || result.label == VoxelLabel::Stair;
+    }
+}
+
+void OctreeManager::aggregateSampleSemantics(int node_index, const std::vector<PointCloudSample>& samples) {
+    if (samples.empty()) {
+        return;
+    }
+
+    int semantic_count = 0;
+    int free_count = 0;
+    int obstacle_count = 0;
+    int stair_count = 0;
+    float probability_sum = 0.0f;
+    std::unordered_map<int, int> room_votes;
+    bool cross_floor = false;
+
+    for (const PointCloudSample& sample : samples) {
+        if (!sample.has_semantics) {
+            continue;
+        }
+        ++semantic_count;
+        probability_sum += sample.obstacle_probability;
+        room_votes[sample.room_id] += 1;
+        cross_floor = cross_floor || sample.is_cross_floor;
+        switch (sample.label) {
+            case VoxelLabel::Free: ++free_count; break;
+            case VoxelLabel::Obstacle: ++obstacle_count; break;
+            case VoxelLabel::Stair: ++stair_count; break;
+        }
+    }
+
+    if (semantic_count == 0) {
+        return;
+    }
+
+    OctreeNode& node = nodes_[node_index];
+    node.obstacle_probability = clampFloat(probability_sum / semantic_count, 0.0f, 1.0f);
+    node.is_cross_floor = cross_floor || stair_count > 0;
+    if (stair_count >= obstacle_count && stair_count >= free_count) {
+        node.label = VoxelLabel::Stair;
+    } else if (obstacle_count >= free_count) {
+        node.label = VoxelLabel::Obstacle;
+    } else {
+        node.label = VoxelLabel::Free;
+    }
+
+    int best_room = node.room_id;
+    int best_votes = -1;
+    for (const auto& vote : room_votes) {
+        if (vote.second > best_votes) {
+            best_votes = vote.second;
+            best_room = vote.first;
+        }
+    }
+    node.room_id = best_room;
+}
+
+bool OctreeManager::canTraverseBetween(const OctreeNode& from, const OctreeNode& to, NeighborDirection dir) const {
+    if (to.label == VoxelLabel::Obstacle || to.obstacle_probability >= 0.95f) {
+        return false;
+    }
+
+    const bool same_room = from.room_id == to.room_id;
+    const bool stair_cross_floor = (dir == POS_Z || dir == NEG_Z) &&
+                                   (from.is_cross_floor || from.label == VoxelLabel::Stair) &&
+                                   (to.is_cross_floor || to.label == VoxelLabel::Stair);
+    if (!same_room && !stair_cross_floor) {
+        return false;
+    }
+
+    switch (dir) {
+        case POS_X:
+            return nearlyTouches(from.bounds.max.x, to.bounds.min.x) &&
+                   rangesOverlap(from.bounds.min.y, from.bounds.max.y, to.bounds.min.y, to.bounds.max.y) &&
+                   rangesOverlap(from.bounds.min.z, from.bounds.max.z, to.bounds.min.z, to.bounds.max.z);
+        case NEG_X:
+            return nearlyTouches(from.bounds.min.x, to.bounds.max.x) &&
+                   rangesOverlap(from.bounds.min.y, from.bounds.max.y, to.bounds.min.y, to.bounds.max.y) &&
+                   rangesOverlap(from.bounds.min.z, from.bounds.max.z, to.bounds.min.z, to.bounds.max.z);
+        case POS_Y:
+            return nearlyTouches(from.bounds.max.y, to.bounds.min.y) &&
+                   rangesOverlap(from.bounds.min.x, from.bounds.max.x, to.bounds.min.x, to.bounds.max.x) &&
+                   rangesOverlap(from.bounds.min.z, from.bounds.max.z, to.bounds.min.z, to.bounds.max.z);
+        case NEG_Y:
+            return nearlyTouches(from.bounds.min.y, to.bounds.max.y) &&
+                   rangesOverlap(from.bounds.min.x, from.bounds.max.x, to.bounds.min.x, to.bounds.max.x) &&
+                   rangesOverlap(from.bounds.min.z, from.bounds.max.z, to.bounds.min.z, to.bounds.max.z);
+        case POS_Z:
+            return nearlyTouches(from.bounds.max.z, to.bounds.min.z) &&
+                   rangesOverlap(from.bounds.min.x, from.bounds.max.x, to.bounds.min.x, to.bounds.max.x) &&
+                   rangesOverlap(from.bounds.min.y, from.bounds.max.y, to.bounds.min.y, to.bounds.max.y);
+        case NEG_Z:
+            return nearlyTouches(from.bounds.min.z, to.bounds.max.z) &&
+                   rangesOverlap(from.bounds.min.x, from.bounds.max.x, to.bounds.min.x, to.bounds.max.x) &&
+                   rangesOverlap(from.bounds.min.y, from.bounds.max.y, to.bounds.min.y, to.bounds.max.y);
+        default:
+            return false;
     }
 }
 
@@ -392,46 +697,36 @@ int OctreeManager::getChildOctant(const Point3D& point, const BBox& bounds) cons
 
 Point3D OctreeManager::computeOctantCenter(const BBox& bounds, int child_index) const {
     const Point3D center = bounds.center();
-    Point3D result = center;
-    if (!(child_index & 1)) {
-        result.x = 0.5f * (bounds.min.x + center.x);
-    } else {
-        result.x = 0.5f * (center.x + bounds.max.x);
-    }
-    if (!(child_index & 2)) {
-        result.y = 0.5f * (bounds.min.y + center.y);
-    } else {
-        result.y = 0.5f * (center.y + bounds.max.y);
-    }
-    if (!(child_index & 4)) {
-        result.z = 0.5f * (bounds.min.z + center.z);
-    } else {
-        result.z = 0.5f * (center.z + bounds.max.z);
-    }
-    return result;
+    return Point3D{
+        child_index & 1 ? 0.5f * (center.x + bounds.max.x) : 0.5f * (bounds.min.x + center.x),
+        child_index & 2 ? 0.5f * (center.y + bounds.max.y) : 0.5f * (bounds.min.y + center.y),
+        child_index & 4 ? 0.5f * (center.z + bounds.max.z) : 0.5f * (bounds.min.z + center.z),
+    };
 }
 
 uint64_t OctreeManager::computeMortonCode(const Point3D& point, int depth) const {
-    const float scale_x = static_cast<float>((1u << max_depth_) - 1) / 20.0f;
-    const float scale_y = static_cast<float>((1u << max_depth_) - 1) / 20.0f;
-    const float scale_z = static_cast<float>((1u << max_depth_) - 1) / 5.0f;
+    const float grid_max = static_cast<float>((1u << std::min(config_.max_depth, 20)) - 1u);
+    const float sx = root_bounds_.width() > 0.0f ? grid_max / root_bounds_.width() : 0.0f;
+    const float sy = root_bounds_.depth() > 0.0f ? grid_max / root_bounds_.depth() : 0.0f;
+    const float sz = root_bounds_.height() > 0.0f ? grid_max / root_bounds_.height() : 0.0f;
 
-    uint32_t x = static_cast<uint32_t>(clampFloat(point.x, 0.0f, 20.0f) * scale_x);
-    uint32_t y = static_cast<uint32_t>(clampFloat(point.y, 0.0f, 20.0f) * scale_y);
-    uint32_t z = static_cast<uint32_t>(clampFloat(point.z, 0.0f, 5.0f) * scale_z);
-    return interleaveBits(x, y, z);
+    const uint32_t x = static_cast<uint32_t>(clampFloat((point.x - root_bounds_.min.x) * sx, 0.0f, grid_max));
+    const uint32_t y = static_cast<uint32_t>(clampFloat((point.y - root_bounds_.min.y) * sy, 0.0f, grid_max));
+    const uint32_t z = static_cast<uint32_t>(clampFloat((point.z - root_bounds_.min.z) * sz, 0.0f, grid_max));
+    return (static_cast<uint64_t>(depth) << 60U) | interleaveBits(x, y, z);
 }
 
 uint64_t OctreeManager::interleaveBits(uint32_t x, uint32_t y, uint32_t z) const {
     auto spread = [](uint64_t v) {
-        v = (v | (v << 32)) & 0x1f00000000ffffULL;
-        v = (v | (v << 16)) & 0x1f0000ff0000ffULL;
-        v = (v | (v << 8)) & 0x100f00f00f00f00fULL;
-        v = (v | (v << 4)) & 0x10c30c30c30c30c3ULL;
-        v = (v | (v << 2)) & 0x1249249249249249ULL;
+        v &= 0x1fffffULL;
+        v = (v | (v << 32U)) & 0x1f00000000ffffULL;
+        v = (v | (v << 16U)) & 0x1f0000ff0000ffULL;
+        v = (v | (v << 8U)) & 0x100f00f00f00f00fULL;
+        v = (v | (v << 4U)) & 0x10c30c30c30c30c3ULL;
+        v = (v | (v << 2U)) & 0x1249249249249249ULL;
         return v;
     };
-    return spread(x) | (spread(y) << 1) | (spread(z) << 2);
+    return spread(x) | (spread(y) << 1U) | (spread(z) << 2U);
 }
 
 } // namespace navigation
