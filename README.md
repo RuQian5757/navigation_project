@@ -30,6 +30,7 @@ dynamic_world_cloud/                  Gazebo system plugin
 gazebo/maps/warehouse_world.sdf       測試用室內倉庫世界
 scripts/visualize_octree_gazebo.cpp   即時 Gazebo Octree viewer
 scripts/visualize_pointcloud_realtime.py Python 即時點雲 viewer
+scripts/run_gazebo.sh                 Gazebo simulation 啟動腳本
 scripts/run_visualization.sh          Octree / pointcloud 共用啟動腳本
 scripts/run_feature_export.sh         Gazebo leaf feature CSV 輸出腳本
 docs/                                 設計與操作文件
@@ -80,7 +81,7 @@ cmake --build build/octree_viewer
 Terminal 1：啟動 Gazebo simulation。
 
 ```bash
-./run_gazebo.sh gazebo/maps/warehouse_world.sdf -s -r -v 2
+./scripts/run_gazebo.sh gazebo/maps/warehouse_world.sdf -s -r -v 2
 ```
 
 Terminal 2：啟動即時 Octree 視覺化。

@@ -26,7 +26,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # ============================================================
 
 # Gazebo Transport partition. This must match the partition used by Gazebo.
-# run_gazebo.sh defaults to "dynamic_cloud_test".
+# scripts/run_gazebo.sh defaults to "dynamic_cloud_test".
 : "${GZ_PARTITION_VALUE:=dynamic_cloud_test}"
 
 # Point cloud topic published by DynamicWorldCloud.

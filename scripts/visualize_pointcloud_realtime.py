@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument('--topic', default='/world/dynamic_cloud',
                         help='Gazebo Transport PointCloudPacked topic')
     parser.add_argument('--partition', default='dynamic_cloud_test',
-                        help='Gazebo Transport partition; must match run_gazebo.sh')
+                        help='Gazebo Transport partition; must match scripts/run_gazebo.sh')
     parser.add_argument('--point-size', default=3, type=int, help='Rendered point size')
     parser.add_argument('--cmap', default='viridis', help='Colormap for z elevation')
     parser.add_argument('--update-rate', default=20.0, type=float,

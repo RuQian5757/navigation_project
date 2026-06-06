@@ -62,5 +62,5 @@ When launching from this repository without installation, use:
 
 ```bash
 cmake --build build --target dynamic_world_cloud
-./run_gazebo.sh gazebo/maps/warehouse_world.sdf
+./scripts/run_gazebo.sh gazebo/maps/warehouse_world.sdf
 ```

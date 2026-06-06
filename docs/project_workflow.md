@@ -117,6 +117,19 @@ warehouse_world.sdf
 - 腳本上方集中放置常用參數，並用註解說明每個參數用途。
 - 支援用環境變數臨時覆寫參數，不需要直接修改 C++ 或 Python 程式。
 
+### Gazebo simulation 啟動腳本
+
+位置：
+
+- `scripts/run_gazebo.sh`
+
+功能：
+
+- 設定 `LD_LIBRARY_PATH`、`GZ_PLUGIN_PATH`、`GZ_SIM_SYSTEM_PLUGIN_PATH`。
+- 設定 `GZ_SIM_RESOURCE_PATH` 與 `GZ_FILE_PATH`，讓 Gazebo 能找到 `gazebo/maps` 內的 world，以及 `gazebo/maps/models` 內的本地模型資源。
+- 設定預設 `GZ_PARTITION=dynamic_cloud_test`。
+- 從專案根目錄或 `gazebo/maps` 自動解析 world 檔案路徑。
+
 ## 2. Gazebo plugin 載入方式
 
 目前 `gazebo/maps/warehouse_world.sdf` 內已經載入 plugin：
@@ -327,14 +340,16 @@ chmod +x scripts/run_feature_export.sh
 ### Terminal 1：啟動 Gazebo simulation
 
 ```bash
-./run_gazebo.sh gazebo/maps/warehouse_world.sdf -s -r -v 2
+./scripts/run_gazebo.sh gazebo/maps/warehouse_world.sdf -s -r -v 2
 ```
 
-`run_gazebo.sh` 會自動設定：
+`scripts/run_gazebo.sh` 會自動設定：
 
 - `LD_LIBRARY_PATH`
 - `GZ_PLUGIN_PATH`
 - `GZ_SIM_SYSTEM_PLUGIN_PATH`
+- `GZ_SIM_RESOURCE_PATH`
+- `GZ_FILE_PATH`
 - `GZ_PARTITION`
 
 預設 partition 是：
@@ -447,7 +462,7 @@ OCTREE_HIDE_POINTS=0 ./scripts/run_visualization.sh octree
 
 `--partition`
 
-Gazebo Transport partition。必須和 Gazebo simulation 使用相同 partition。`run_gazebo.sh` 預設是 `dynamic_cloud_test`。
+Gazebo Transport partition。必須和 Gazebo simulation 使用相同 partition。`scripts/run_gazebo.sh` 預設是 `dynamic_cloud_test`。
 
 `--topic`
 
@@ -621,7 +636,7 @@ OCTREE_REBUILD_HZ=0.5 \
 cmake --build build --target dynamic_world_cloud
 ```
 
-確認用 `run_gazebo.sh` 啟動，讓 plugin path 正確設定。
+確認用 `scripts/run_gazebo.sh` 啟動，讓 plugin path 正確設定。
 
 ### Viewer 開了但一直 waiting
 
