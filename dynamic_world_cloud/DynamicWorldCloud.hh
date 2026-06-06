@@ -109,7 +109,7 @@ private:
   pcl::PointCloud<pcl::PointXYZ> SampleSphere(double _radius,
                                               double _spacing) const;
 
-  /// \brief Load mesh through gz::common::MeshManager and use vertices.
+  /// \brief Load mesh through gz::common::MeshManager and sample triangle surfaces.
   pcl::PointCloud<pcl::PointXYZ> SampleMesh(const sdf::Mesh &_mesh) const;
 
   /// \brief Sample a finite SDF plane, useful for floor collision geometry.
@@ -155,7 +155,7 @@ private:
 
   std::unordered_map<uint64_t, EntityCloud> entity_clouds_;
   mutable std::unordered_map<std::string, pcl::PointCloud<pcl::PointXYZ>>
-      mesh_vertex_cache_;
+      mesh_surface_cache_;
   pcl::PointCloud<pcl::PointXYZ> global_cloud_;
   std::vector<PointSemantic> global_semantics_;
 

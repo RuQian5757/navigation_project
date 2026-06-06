@@ -180,6 +180,8 @@ Viewer 參數：
 - `--rebuild-hz`：每秒最多重建與刷新幾次。
 - `--voxel-mode`：`centers`、`boxes`、`hybrid`、`center-boxes`。
 - `--no-points`：不顯示原始白色點雲。
+- `--color-mode`：`depth`、`label`、`probability`。
+- `--probability-color`：依 `obstacle_probability` 上色，越接近 1 越醒目；樓梯固定為亮紫紅色。
 - `--label-color`：用語義 label 上色，而不是 Octree depth。
 
 Feature exporter 參數：

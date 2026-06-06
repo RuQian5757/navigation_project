@@ -288,8 +288,8 @@ DynamicWorldCloud::PublishPointCloud()
 視覺化:
   -> visualize_octree_gazebo.cpp callback
   -> parsePointCloudPacked()
-  -> std::vector<navigation::Point3D>
-  -> OctreeManager::initialize(points)
+  -> std::vector<navigation::PointCloudSample>
+  -> OctreeManager::initialize(samples)
   -> PCLVisualizer
 ```
 
@@ -472,6 +472,7 @@ OCTREE_HIDE_POINTS=0 ./scripts/run_visualization.sh octree
 - `OCTREE_REBUILD_HZ`：Octree viewer 每秒最多更新次數。
 - `OCTREE_VOXEL_MODE`：`centers`、`boxes`、`hybrid`、`center-boxes`。
 - `OCTREE_HIDE_POINTS`：`1` 隱藏原始點雲，`0` 顯示原始點雲。
+- `OCTREE_COLOR_MODE`：`depth`、`label`、`probability`。
 - `POINTCLOUD_POINT_SIZE`：Python pointcloud viewer 點大小。
 - `POINTCLOUD_MAX_RENDER_POINTS`：Python pointcloud viewer 最多顯示點數。
 
@@ -530,9 +531,15 @@ Viewer 每秒最多解析、重建 Octree、刷新畫面的次數。預設是 `1
 
 - 綠色：Free
 - 紅色：Obstacle
-- 藍色：Stair 或 cross-floor
+- 亮紫紅色：Stair 或 cross-floor
 
-目前 Gazebo plugin 發出的點雲沒有 ML label，因此一般展示 Octree 切割時不建議使用此選項。
+`--probability-color`
+
+依 `obstacle_probability` 使用連續色階。低概率 voxel 會偏淡藍、較不醒目；中間概率偏黃；接近 `1.0` 的 voxel 會變成亮紅，適合檢查障礙物風險分布。
+
+Stair / cross-floor voxel 在 probability color 模式下會固定顯示為亮紫紅色，不會因樓梯的低障礙概率而變淡。
+
+目前 Gazebo plugin 發出的點雲已包含 semantic label 與 `obstacle_probability`，因此 `label` 與 `probability` color mode 都可以直接使用。
 
 ## 8. Leaf Feature CSV 輸出參數
 
@@ -670,6 +677,13 @@ FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 - 偏黃或紅色：較深層 depth，通常代表較小的 voxel。
 
 PCL 的 point size 是螢幕像素大小，不是真實世界尺寸。因此要看 voxel 實際體積，請使用 `--voxel-mode boxes` 或 `--voxel-mode center-boxes`。
+
+若使用 probability color 模式：
+
+- 淡藍：`obstacle_probability` 接近 `0`。
+- 黃色：中間風險。
+- 亮紅：`obstacle_probability` 接近 `1`。
+- 亮紫紅色：Stair 或 cross-floor。
 
 ## 10. 效能調整建議
 

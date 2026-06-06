@@ -54,6 +54,62 @@ void AppendPoint(pcl::PointCloud<pcl::PointXYZ> &_cloud,
                       static_cast<float>(_z));
 }
 
+double Distance(const gz::math::Vector3d &_a,
+                const gz::math::Vector3d &_b)
+{
+  const double dx = _a.X() - _b.X();
+  const double dy = _a.Y() - _b.Y();
+  const double dz = _a.Z() - _b.Z();
+  return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+double TriangleArea2(const gz::math::Vector3d &_a,
+                     const gz::math::Vector3d &_b,
+                     const gz::math::Vector3d &_c)
+{
+  const double abx = _b.X() - _a.X();
+  const double aby = _b.Y() - _a.Y();
+  const double abz = _b.Z() - _a.Z();
+  const double acx = _c.X() - _a.X();
+  const double acy = _c.Y() - _a.Y();
+  const double acz = _c.Z() - _a.Z();
+  const double cx = aby * acz - abz * acy;
+  const double cy = abz * acx - abx * acz;
+  const double cz = abx * acy - aby * acx;
+  return std::sqrt(cx * cx + cy * cy + cz * cz);
+}
+
+void AppendTriangleSamples(pcl::PointCloud<pcl::PointXYZ> &_cloud,
+                           const gz::math::Vector3d &_a,
+                           const gz::math::Vector3d &_b,
+                           const gz::math::Vector3d &_c,
+                           double _spacing)
+{
+  if (TriangleArea2(_a, _b, _c) < 1e-9)
+    return;
+
+  const double longestEdge = std::max({
+      Distance(_a, _b),
+      Distance(_b, _c),
+      Distance(_c, _a)});
+  const int steps = std::max(
+      1, static_cast<int>(std::ceil(longestEdge / SafeSpacing(_spacing))));
+
+  for (int i = 0; i <= steps; ++i)
+  {
+    const double u = static_cast<double>(i) / steps;
+    for (int j = 0; j <= steps - i; ++j)
+    {
+      const double v = static_cast<double>(j) / steps;
+      const double w = 1.0 - u - v;
+      AppendPoint(_cloud,
+                  w * _a.X() + u * _b.X() + v * _c.X(),
+                  w * _a.Y() + u * _b.Y() + v * _c.Y(),
+                  w * _a.Z() + u * _b.Z() + v * _c.Z());
+    }
+  }
+}
+
 std::string ToLower(std::string _text)
 {
   std::transform(_text.begin(), _text.end(), _text.begin(),
@@ -426,13 +482,13 @@ pcl::PointCloud<pcl::PointXYZ> DynamicWorldCloud::SampleMesh(
       uri + "|" + std::to_string(scale.X()) + "," +
       std::to_string(scale.Y()) + "," + std::to_string(scale.Z());
 
-  if (auto it = this->mesh_vertex_cache_.find(cacheKey);
-      it != this->mesh_vertex_cache_.end())
+  if (auto it = this->mesh_surface_cache_.find(cacheKey);
+      it != this->mesh_surface_cache_.end())
   {
     return it->second;
   }
 
-  pcl::PointCloud<pcl::PointXYZ> vertices;
+  pcl::PointCloud<pcl::PointXYZ> surfacePoints;
   const gz::common::Mesh *mesh =
       gz::common::MeshManager::Instance()->Load(uri);
   if (!mesh)
@@ -448,18 +504,67 @@ pcl::PointCloud<pcl::PointXYZ> DynamicWorldCloud::SampleMesh(
     if (!submesh)
       continue;
 
-    for (unsigned int vi = 0; vi < submesh->VertexCount(); ++vi)
+    const auto scaledVertex =
+        [&](unsigned int _index) -> gz::math::Vector3d
+        {
+          return submesh->Vertex(_index) * scale;
+        };
+
+    bool sampledTriangles = false;
+    const unsigned int indexCount = submesh->IndexCount();
+    if (indexCount >= 3)
     {
-      const gz::math::Vector3d v = submesh->Vertex(vi) * scale;
-      AppendPoint(vertices, v.X(), v.Y(), v.Z());
+      for (unsigned int ii = 0; ii + 2 < indexCount; ii += 3)
+      {
+        const int ia = submesh->Index(ii);
+        const int ib = submesh->Index(ii + 1);
+        const int ic = submesh->Index(ii + 2);
+        if (ia < 0 || ib < 0 || ic < 0)
+          continue;
+        const unsigned int ua = static_cast<unsigned int>(ia);
+        const unsigned int ub = static_cast<unsigned int>(ib);
+        const unsigned int uc = static_cast<unsigned int>(ic);
+        if (ua >= submesh->VertexCount() ||
+            ub >= submesh->VertexCount() ||
+            uc >= submesh->VertexCount())
+          continue;
+        AppendTriangleSamples(surfacePoints,
+                              scaledVertex(ua),
+                              scaledVertex(ub),
+                              scaledVertex(uc),
+                              this->spacing_);
+        sampledTriangles = true;
+      }
+    }
+
+    if (!sampledTriangles && submesh->VertexCount() >= 3)
+    {
+      for (unsigned int vi = 0; vi + 2 < submesh->VertexCount(); vi += 3)
+      {
+        AppendTriangleSamples(surfacePoints,
+                              scaledVertex(vi),
+                              scaledVertex(vi + 1),
+                              scaledVertex(vi + 2),
+                              this->spacing_);
+        sampledTriangles = true;
+      }
+    }
+
+    if (!sampledTriangles)
+    {
+      for (unsigned int vi = 0; vi < submesh->VertexCount(); ++vi)
+      {
+        const gz::math::Vector3d v = scaledVertex(vi);
+        AppendPoint(surfacePoints, v.X(), v.Y(), v.Z());
+      }
     }
   }
 
-  vertices.width = static_cast<uint32_t>(vertices.size());
-  vertices.height = 1;
-  vertices.is_dense = true;
-  this->mesh_vertex_cache_.emplace(cacheKey, vertices);
-  return vertices;
+  surfacePoints.width = static_cast<uint32_t>(surfacePoints.size());
+  surfacePoints.height = 1;
+  surfacePoints.is_dense = true;
+  this->mesh_surface_cache_.emplace(cacheKey, surfacePoints);
+  return surfacePoints;
 }
 
 pcl::PointCloud<pcl::PointXYZ> DynamicWorldCloud::SamplePlane(
@@ -516,18 +621,24 @@ DynamicWorldCloud::PointSemantic DynamicWorldCloud::InferSemantics(
   semantic.entity_id = static_cast<uint32_t>(_entityKey & 0xffffffffULL);
 
   const std::string name = ToLower(_scopedName);
-  if (name.find("stair") != std::string::npos ||
-      name.find("stairs") != std::string::npos)
-  {
-    semantic.label = 2;
-    semantic.obstacle_probability = 0.25f;
-  }
-  else if (name.find("floor") != std::string::npos ||
-           name.find("ground") != std::string::npos ||
-           _geometry.Type() == sdf::GeometryType::PLANE)
+  const bool floor_like =
+      name.find("floor") != std::string::npos ||
+      name.find("ground") != std::string::npos ||
+      _geometry.Type() == sdf::GeometryType::PLANE;
+  const bool stair_like =
+      name.find("stair") != std::string::npos ||
+      name.find("stairs") != std::string::npos;
+
+  // Prefer floor semantics when a floor model name also describes stair access.
+  if (floor_like)
   {
     semantic.label = 0;
     semantic.obstacle_probability = 0.05f;
+  }
+  else if (stair_like)
+  {
+    semantic.label = 2;
+    semantic.obstacle_probability = 0.25f;
   }
   else
   {

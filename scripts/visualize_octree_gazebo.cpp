@@ -31,6 +31,12 @@ enum class VoxelMode {
     CenterBoxes,
 };
 
+enum class ColorMode {
+    Depth,
+    Label,
+    Probability,
+};
+
 struct Options {
     std::string topic = "/world/dynamic_cloud";
     std::string partition = "dynamic_cloud_test";
@@ -40,13 +46,13 @@ struct Options {
     double rebuild_hz = 1.0;
     bool show_points = true;
     bool show_voxels = true;
-    bool color_by_depth = true;
+    ColorMode color_mode = ColorMode::Probability;
     VoxelMode voxel_mode = VoxelMode::Centers;
 };
 
 struct LatestCloud {
     std::mutex mutex;
-    std::vector<navigation::Point3D> points;
+    std::vector<navigation::PointCloudSample> samples;
     std::uint64_t frame = 0;
     std::uint64_t source_points = 0;
     std::string status = "waiting";
@@ -67,6 +73,8 @@ void printUsage(const char* program) {
         << "  --no-points           Hide original point cloud\n"
         << "  --no-voxels           Hide octree voxel boxes\n"
         << "  --label-color         Color voxels by ML/navigation label instead of depth\n"
+        << "  --probability-color   Color voxels by obstacle probability\n"
+        << "  --color-mode MODE     depth, label, or probability; default probability\n"
         << "  --help                Show this message\n\n"
         << "Build:\n"
         << "  cmake -S scripts -B build/octree_viewer\n"
@@ -109,7 +117,21 @@ bool parseArgs(int argc, char** argv, Options& options) {
         } else if (arg == "--no-voxels") {
             options.show_voxels = false;
         } else if (arg == "--label-color") {
-            options.color_by_depth = false;
+            options.color_mode = ColorMode::Label;
+        } else if (arg == "--probability-color") {
+            options.color_mode = ColorMode::Probability;
+        } else if (arg == "--color-mode" && i + 1 < argc) {
+            const std::string mode = argv[++i];
+            if (mode == "depth") {
+                options.color_mode = ColorMode::Depth;
+            } else if (mode == "label") {
+                options.color_mode = ColorMode::Label;
+            } else if (mode == "probability" || mode == "prob") {
+                options.color_mode = ColorMode::Probability;
+            } else {
+                std::cerr << "Unknown color mode: " << mode << "\n";
+                return false;
+            }
         } else if (arg == "--help" || arg == "-h") {
             printUsage(argv[0]);
             return false;
@@ -122,35 +144,64 @@ bool parseArgs(int argc, char** argv, Options& options) {
     return true;
 }
 
-bool findXYZOffsets(const gz::msgs::PointCloudPacked& msg,
-                    int& x_offset, int& y_offset, int& z_offset) {
-    x_offset = -1;
-    y_offset = -1;
-    z_offset = -1;
+struct PackedFieldOffsets {
+    int x = -1;
+    int y = -1;
+    int z = -1;
+    int label = -1;
+    int obstacle_probability = -1;
+    int entity_id = -1;
+};
 
+bool findFieldOffsets(const gz::msgs::PointCloudPacked& msg,
+                      PackedFieldOffsets& offsets) {
     for (int i = 0; i < msg.field_size(); ++i) {
         const auto& field = msg.field(i);
-        if (field.datatype() != gz::msgs::PointCloudPacked::Field::FLOAT32) {
-            continue;
-        }
 
-        if (field.name() == "x") {
-            x_offset = static_cast<int>(field.offset());
-        } else if (field.name() == "y") {
-            y_offset = static_cast<int>(field.offset());
-        } else if (field.name() == "z") {
-            z_offset = static_cast<int>(field.offset());
-        } else if (field.name() == "xyz") {
-            x_offset = static_cast<int>(field.offset());
-            y_offset = x_offset + static_cast<int>(sizeof(float));
-            z_offset = y_offset + static_cast<int>(sizeof(float));
+        if (field.datatype() == gz::msgs::PointCloudPacked::Field::FLOAT32) {
+            if (field.name() == "x") {
+                offsets.x = static_cast<int>(field.offset());
+            } else if (field.name() == "y") {
+                offsets.y = static_cast<int>(field.offset());
+            } else if (field.name() == "z") {
+                offsets.z = static_cast<int>(field.offset());
+            } else if (field.name() == "xyz") {
+                offsets.x = static_cast<int>(field.offset());
+                offsets.y = offsets.x + static_cast<int>(sizeof(float));
+                offsets.z = offsets.y + static_cast<int>(sizeof(float));
+            } else if (field.name() == "obstacle_probability") {
+                offsets.obstacle_probability = static_cast<int>(field.offset());
+            }
+        } else if (field.datatype() == gz::msgs::PointCloudPacked::Field::UINT32) {
+            if (field.name() == "label") {
+                offsets.label = static_cast<int>(field.offset());
+            } else if (field.name() == "entity_id") {
+                offsets.entity_id = static_cast<int>(field.offset());
+            }
         }
     }
 
-    return x_offset >= 0 && y_offset >= 0 && z_offset >= 0;
+    return offsets.x >= 0 && offsets.y >= 0 && offsets.z >= 0;
 }
 
-std::vector<navigation::Point3D> parsePointCloudPacked(
+navigation::VoxelLabel toVoxelLabel(std::uint32_t label) {
+    if (label == static_cast<std::uint32_t>(navigation::VoxelLabel::Obstacle)) {
+        return navigation::VoxelLabel::Obstacle;
+    }
+    if (label == static_cast<std::uint32_t>(navigation::VoxelLabel::Stair)) {
+        return navigation::VoxelLabel::Stair;
+    }
+    return navigation::VoxelLabel::Free;
+}
+
+float clampProbability(float value) {
+    if (!std::isfinite(value)) {
+        return 0.0f;
+    }
+    return std::max(0.0f, std::min(1.0f, value));
+}
+
+std::vector<navigation::PointCloudSample> parsePointCloudPacked(
     const gz::msgs::PointCloudPacked& msg, int max_render_points,
     std::uint64_t& source_points) {
     source_points = static_cast<std::uint64_t>(msg.width()) *
@@ -159,10 +210,8 @@ std::vector<navigation::Point3D> parsePointCloudPacked(
         return {};
     }
 
-    int x_offset = -1;
-    int y_offset = -1;
-    int z_offset = -1;
-    if (!findXYZOffsets(msg, x_offset, y_offset, z_offset)) {
+    PackedFieldOffsets offsets;
+    if (!findFieldOffsets(msg, offsets)) {
         throw std::runtime_error("PointCloudPacked does not contain FLOAT32 x/y/z or xyz fields");
     }
 
@@ -178,8 +227,9 @@ std::vector<navigation::Point3D> parsePointCloudPacked(
                                                    static_cast<double>(max_render_points)))
                                    : 1U;
 
-    std::vector<navigation::Point3D> points;
-    points.reserve(static_cast<std::size_t>(
+    const bool has_semantics = offsets.label >= 0 && offsets.obstacle_probability >= 0;
+    std::vector<navigation::PointCloudSample> samples;
+    samples.reserve(static_cast<std::size_t>(
         std::min<std::uint64_t>(source_points, static_cast<std::uint64_t>(max_render_points))));
 
     const char* data = msg.data().data();
@@ -188,21 +238,43 @@ std::vector<navigation::Point3D> parsePointCloudPacked(
         float x = 0.0f;
         float y = 0.0f;
         float z = 0.0f;
-        std::memcpy(&x, data + base + static_cast<std::size_t>(x_offset), sizeof(float));
-        std::memcpy(&y, data + base + static_cast<std::size_t>(y_offset), sizeof(float));
-        std::memcpy(&z, data + base + static_cast<std::size_t>(z_offset), sizeof(float));
+        std::memcpy(&x, data + base + static_cast<std::size_t>(offsets.x), sizeof(float));
+        std::memcpy(&y, data + base + static_cast<std::size_t>(offsets.y), sizeof(float));
+        std::memcpy(&z, data + base + static_cast<std::size_t>(offsets.z), sizeof(float));
         if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
-            points.push_back({x, y, z});
+            navigation::PointCloudSample sample;
+            sample.point = {x, y, z};
+            if (has_semantics) {
+                std::uint32_t label = 0;
+                float probability = 0.0f;
+                std::memcpy(&label, data + base + static_cast<std::size_t>(offsets.label), sizeof(label));
+                std::memcpy(&probability,
+                            data + base + static_cast<std::size_t>(offsets.obstacle_probability),
+                            sizeof(probability));
+                sample.label = toVoxelLabel(label);
+                sample.obstacle_probability = clampProbability(probability);
+                sample.has_semantics = true;
+                sample.is_cross_floor = sample.label == navigation::VoxelLabel::Stair;
+                if (offsets.entity_id >= 0) {
+                    std::uint32_t entity_id = 0;
+                    std::memcpy(&entity_id,
+                                data + base + static_cast<std::size_t>(offsets.entity_id),
+                                sizeof(entity_id));
+                    sample.entity_id = entity_id;
+                }
+            }
+            samples.push_back(sample);
         }
     }
 
-    return points;
+    return samples;
 }
 
-pcl::PointCloud<pcl::PointXYZ>::Ptr toPclCloud(const std::vector<navigation::Point3D>& points) {
+pcl::PointCloud<pcl::PointXYZ>::Ptr toPclCloud(const std::vector<navigation::PointCloudSample>& samples) {
     auto cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>());
-    cloud->reserve(points.size());
-    for (const auto& p : points) {
+    cloud->reserve(samples.size());
+    for (const auto& sample : samples) {
+        const auto& p = sample.point;
         cloud->push_back(pcl::PointXYZ(p.x, p.y, p.z));
     }
     cloud->width = static_cast<std::uint32_t>(cloud->size());
@@ -223,9 +295,9 @@ void colorByDepth(int depth, int max_depth, double& r, double& g, double& b) {
 void colorByLabel(navigation::VoxelLabel label, float probability, bool cross_floor,
                   double& r, double& g, double& b) {
     if (cross_floor || label == navigation::VoxelLabel::Stair) {
-        r = 0.10;
-        g = 0.45;
-        b = 1.00;
+        r = 1.00;
+        g = 0.00;
+        b = 0.95;
         return;
     }
     if (label == navigation::VoxelLabel::Obstacle || probability >= 0.70f) {
@@ -239,26 +311,82 @@ void colorByLabel(navigation::VoxelLabel label, float probability, bool cross_fl
     b = 0.35;
 }
 
+void colorByProbability(float probability, double& r, double& g, double& b) {
+    const double t = std::max(0.0, std::min(1.0, static_cast<double>(probability)));
+    if (t < 0.5) {
+        const double k = t / 0.5;
+        r = 0.18 + 0.82 * k;
+        g = 0.72 + 0.18 * k;
+        b = 0.95 - 0.85 * k;
+    } else {
+        const double k = (t - 0.5) / 0.5;
+        r = 1.00;
+        g = 0.90 - 0.78 * k;
+        b = 0.10 - 0.04 * k;
+    }
+}
+
+void colorForNode(const navigation::OctreeNode& node,
+                  const Options& options,
+                  double& r,
+                  double& g,
+                  double& b) {
+    if (node.is_cross_floor || node.label == navigation::VoxelLabel::Stair) {
+        colorByLabel(node.label, node.obstacle_probability, node.is_cross_floor, r, g, b);
+    } else if (options.color_mode == ColorMode::Depth) {
+        colorByDepth(node.depth, options.max_depth, r, g, b);
+    } else if (options.color_mode == ColorMode::Label) {
+        colorByLabel(node.label, node.obstacle_probability, node.is_cross_floor, r, g, b);
+    } else {
+        colorByProbability(node.obstacle_probability, r, g, b);
+    }
+}
+
 std::vector<int> collectLeafIndices(const navigation::OctreeManager& octree, int max_voxels) {
-    std::vector<int> leaves;
+    std::vector<int> highlighted;
+    std::vector<int> regular;
     const auto& nodes = octree.nodes();
-    leaves.reserve(nodes.size());
+    highlighted.reserve(nodes.size());
+    regular.reserve(nodes.size());
     for (int i = 0; i < static_cast<int>(nodes.size()); ++i) {
         if (nodes[i].leaf) {
-            leaves.push_back(i);
+            if (nodes[i].label == navigation::VoxelLabel::Stair || nodes[i].is_cross_floor) {
+                highlighted.push_back(i);
+            } else {
+                regular.push_back(i);
+            }
         }
     }
 
-    if (static_cast<int>(leaves.size()) <= max_voxels) {
-        return leaves;
+    if (static_cast<int>(highlighted.size() + regular.size()) <= max_voxels) {
+        highlighted.insert(highlighted.end(), regular.begin(), regular.end());
+        return highlighted;
+    }
+
+    if (static_cast<int>(highlighted.size()) >= max_voxels) {
+        std::vector<int> sampled;
+        sampled.reserve(max_voxels);
+        const double step = static_cast<double>(highlighted.size()) / static_cast<double>(max_voxels);
+        for (int i = 0; i < max_voxels; ++i) {
+            const std::size_t idx = static_cast<std::size_t>(std::floor(i * step));
+            sampled.push_back(highlighted[std::min(idx, highlighted.size() - 1)]);
+        }
+        return sampled;
     }
 
     std::vector<int> sampled;
     sampled.reserve(max_voxels);
-    const double step = static_cast<double>(leaves.size()) / static_cast<double>(max_voxels);
-    for (int i = 0; i < max_voxels; ++i) {
+    sampled.insert(sampled.end(), highlighted.begin(), highlighted.end());
+
+    const int remaining = max_voxels - static_cast<int>(sampled.size());
+    if (remaining <= 0 || regular.empty()) {
+        return sampled;
+    }
+
+    const double step = static_cast<double>(regular.size()) / static_cast<double>(remaining);
+    for (int i = 0; i < remaining; ++i) {
         const std::size_t idx = static_cast<std::size_t>(std::floor(i * step));
-        sampled.push_back(leaves[std::min(idx, leaves.size() - 1)]);
+        sampled.push_back(regular[std::min(idx, regular.size() - 1)]);
     }
     return sampled;
 }
@@ -277,6 +405,7 @@ void clearVoxelCenterClouds(pcl::visualization::PCLVisualizer& viewer, int max_d
         id << "voxel_centers_depth_" << depth;
         viewer.removePointCloud(id.str());
     }
+    viewer.removePointCloud("voxel_centers_rgb");
 }
 
 std::size_t addOctreeVoxels(pcl::visualization::PCLVisualizer& viewer,
@@ -291,11 +420,7 @@ std::size_t addOctreeVoxels(pcl::visualization::PCLVisualizer& viewer,
         double r = 0.0;
         double g = 0.0;
         double b = 0.0;
-        if (options.color_by_depth) {
-            colorByDepth(node.depth, options.max_depth, r, g, b);
-        } else {
-            colorByLabel(node.label, node.obstacle_probability, node.is_cross_floor, r, g, b);
-        }
+        colorForNode(node, options, r, g, b);
 
         std::ostringstream id;
         id << "voxel_" << i;
@@ -311,6 +436,12 @@ std::size_t addOctreeVoxels(pcl::visualization::PCLVisualizer& viewer,
             pcl::visualization::PCL_VISUALIZER_LINE_WIDTH, 1.0, id.str());
         viewer.setShapeRenderingProperties(
             pcl::visualization::PCL_VISUALIZER_OPACITY, 0.35, id.str());
+        if (node.label == navigation::VoxelLabel::Stair || node.is_cross_floor) {
+            viewer.setShapeRenderingProperties(
+                pcl::visualization::PCL_VISUALIZER_LINE_WIDTH, 3.0, id.str());
+            viewer.setShapeRenderingProperties(
+                pcl::visualization::PCL_VISUALIZER_OPACITY, 0.90, id.str());
+        }
     }
 
     return leaves.size();
@@ -321,6 +452,42 @@ std::size_t addOrUpdateVoxelCenters(pcl::visualization::PCLVisualizer& viewer,
                                     const Options& options) {
     const std::vector<int> leaves = collectLeafIndices(octree, options.max_voxels);
     const auto& nodes = octree.nodes();
+
+    if (options.color_mode != ColorMode::Depth) {
+        auto cloud = pcl::PointCloud<pcl::PointXYZRGB>::Ptr(new pcl::PointCloud<pcl::PointXYZRGB>());
+        cloud->reserve(leaves.size());
+        for (int leaf : leaves) {
+            const navigation::OctreeNode& node = nodes[leaf];
+            const navigation::Point3D c = node.bounds.center();
+            double r = 0.0;
+            double g = 0.0;
+            double b = 0.0;
+            colorForNode(node, options, r, g, b);
+
+            pcl::PointXYZRGB point;
+            point.x = c.x;
+            point.y = c.y;
+            point.z = c.z;
+            point.r = static_cast<std::uint8_t>(std::round(255.0 * r));
+            point.g = static_cast<std::uint8_t>(std::round(255.0 * g));
+            point.b = static_cast<std::uint8_t>(std::round(255.0 * b));
+            cloud->push_back(point);
+        }
+
+        cloud->width = static_cast<std::uint32_t>(cloud->size());
+        cloud->height = 1;
+        cloud->is_dense = true;
+        clearVoxelCenterClouds(viewer, options.max_depth);
+        if (!viewer.updatePointCloud<pcl::PointXYZRGB>(cloud, "voxel_centers_rgb")) {
+            viewer.addPointCloud<pcl::PointXYZRGB>(cloud, "voxel_centers_rgb");
+        }
+        viewer.setPointCloudRenderingProperties(
+            pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 5.0, "voxel_centers_rgb");
+        viewer.setPointCloudRenderingProperties(
+            pcl::visualization::PCL_VISUALIZER_OPACITY, 0.90, "voxel_centers_rgb");
+        return leaves.size();
+    }
+
     std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> clouds(
         static_cast<std::size_t>(options.max_depth + 1));
 
@@ -421,11 +588,11 @@ int main(int argc, char** argv) {
 
             try {
                 std::uint64_t source_points = 0;
-                std::vector<navigation::Point3D> points =
+                std::vector<navigation::PointCloudSample> samples =
                     parsePointCloudPacked(msg, max_render_points, source_points);
 
                 std::lock_guard<std::mutex> lock(latest.mutex);
-                latest.points = std::move(points);
+                latest.samples = std::move(samples);
                 latest.source_points = source_points;
                 latest.frame += 1;
                 latest.status = "streaming";
@@ -459,7 +626,7 @@ int main(int argc, char** argv) {
     const auto rebuild_period = std::chrono::duration<double>(1.0 / options.rebuild_hz);
 
     while (running && !viewer.wasStopped()) {
-        std::vector<navigation::Point3D> points;
+        std::vector<navigation::PointCloudSample> samples;
         std::uint64_t frame = 0;
         std::uint64_t source_points = 0;
         std::string status;
@@ -469,18 +636,18 @@ int main(int argc, char** argv) {
             source_points = latest.source_points;
             status = latest.status;
             if (frame != rendered_frame) {
-                points = latest.points;
+                samples = latest.samples;
             }
         }
 
         const auto now = std::chrono::steady_clock::now();
-        if (!points.empty() && frame != rendered_frame &&
+        if (!samples.empty() && frame != rendered_frame &&
             now - last_rebuild >= rebuild_period) {
             navigation::OctreeManager octree(config);
-            octree.initialize(points);
+            octree.initialize(samples);
 
             if (options.show_points) {
-                addOrUpdatePointCloud(viewer, toPclCloud(points));
+                addOrUpdatePointCloud(viewer, toPclCloud(samples));
             }
             if (options.show_voxels) {
                 if (options.voxel_mode == VoxelMode::Centers) {
@@ -509,7 +676,7 @@ int main(int argc, char** argv) {
             std::ostringstream title;
             title << "Realtime Navigation Octree | frame=" << frame
                   << " source_points=" << source_points
-                  << " rendered_points=" << points.size()
+                  << " rendered_points=" << samples.size()
                   << " leaves=" << octree.getLeafCount()
                   << " voxels=" << rendered_voxels;
             viewer.setWindowName(title.str());

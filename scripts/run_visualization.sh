@@ -62,8 +62,13 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Set to 0 if you want to keep the original point cloud shape visible.
 : "${OCTREE_HIDE_POINTS:=1}"
 
-# If set to 1, color voxels by label instead of Octree depth.
-# Current Gazebo cloud does not provide ML labels, so depth color is preferred.
+# Voxel color mode:
+#   depth       : color by Octree depth
+#   label       : color by semantic label
+#   probability : color by obstacle_probability; low is subtle, high is bright
+: "${OCTREE_COLOR_MODE:=probability}"
+
+# Backward-compatible switch. If set to 1, it overrides OCTREE_COLOR_MODE=label.
 : "${OCTREE_LABEL_COLOR:=0}"
 
 # ============================================================
@@ -115,6 +120,7 @@ Octree overrides:
   OCTREE_REBUILD_HZ
   OCTREE_VOXEL_MODE
   OCTREE_HIDE_POINTS
+  OCTREE_COLOR_MODE
   OCTREE_LABEL_COLOR
 
 Pointcloud overrides:
@@ -157,6 +163,7 @@ EOF
       --max-render-points "${OCTREE_MAX_RENDER_POINTS}"
       --rebuild-hz "${OCTREE_REBUILD_HZ}"
       --voxel-mode "${OCTREE_VOXEL_MODE}"
+      --color-mode "${OCTREE_COLOR_MODE}"
     )
 
     if [ "${OCTREE_HIDE_POINTS}" = "1" ]; then
