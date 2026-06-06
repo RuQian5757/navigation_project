@@ -1,5 +1,9 @@
 # Gazebo Point Cloud 取得指南
 
+> 注意：本文件保留早期 depth camera / ROS bridge 的探索紀錄。  
+> 目前專案主流程已改為 `DynamicWorldCloud` Gazebo system plugin 直接從 collision geometry 產生 ground-truth cloud，並發布 `/world/dynamic_cloud`。  
+> 最新建置、執行、資料流與視覺化操作請優先閱讀 [project_workflow.md](project_workflow.md)。
+
 ## 修改內容
 
 已在 `gazebo/maps/warehouse_world.sdf` 加入高解析度深度相機 sensor，可產生 **~1,048,576 點** 的點雲（1024×1024 解析度）。

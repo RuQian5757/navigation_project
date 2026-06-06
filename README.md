@@ -1,62 +1,182 @@
 # navigation_project
 
-## 專案簡介
+本專案是「基於 Octree 與機器學習的室內多樓層 3D 點雲導航優化」的大學專題實作。
 
-本專案為「基於 Octree 與機器學習的室內多樓層 3D 點雲導航優化」初始工程骨架。
-目標建立 C++ 與 Python 混合專案，C++ 負責 Octree 結構、3D 規劃與 Gazebo 整合，Python 負責 ML 模型訓練與 ONNX 匯出。
+目前主線功能是：
 
-## 目前專案結構
+- Gazebo Sim 內產生室內場景 ground-truth 3D 點雲
+- 透過 Gazebo Transport 發布 `/world/dynamic_cloud`
+- C++ `OctreeManager` 建立導航用 Linear Octree
+- PCLVisualizer 即時顯示 Octree voxel 切割結果
+- 後續可接 ML label、room id、cross-floor edge、A* cost
 
-- `CMakeLists.txt`：C++ 專案設定與編譯規則。
-- `src/`：C++ 原始碼。
-- `include/`：C++ 標頭檔。
-- `python/`：Python 訓練與資料處理程式。
-- `.gitignore`：常見忽略檔案。
+完整流程與參數說明請看：
 
-## 開發建議
+- [docs/project_workflow.md](docs/project_workflow.md)
+- [docs/octree_design.md](docs/octree_design.md)
+- [dynamic_world_cloud/README.md](dynamic_world_cloud/README.md)
 
-1. 先實作基本 Octree 結構與 3D A* 路徑規劃。
-2. 再整合 Gazebo 點雲輸入與增量更新。
-3. 最後加入 Python Random Forest 訓練、ONNX 匯出與 C++ 推理。
+## 專案結構
 
-## 初始編譯指令
+```text
+include/octree_manager.h              Octree API 與資料結構
+src/octree_manager.cpp                Octree 核心實作
+tests/test_octree.cpp                 Octree 單元測試
+dynamic_world_cloud/                  Gazebo system plugin
+gazebo/maps/warehouse_world.sdf       測試用室內倉庫世界
+scripts/visualize_octree_gazebo.cpp   即時 Gazebo Octree viewer
+scripts/visualize_octree_pcl.cpp      離線 PCD Octree viewer
+scripts/visualize_pointcloud_realtime.py 舊版 Python 點雲 viewer
+docs/                                 設計與操作文件
+```
+
+## 依賴
+
+Ubuntu 24.04 / Gazebo Harmonic 建議安裝：
+
+```bash
+sudo apt install \
+  libgz-sim8-dev \
+  libgz-common5-dev \
+  libgz-plugin2-dev \
+  libgz-transport13-dev \
+  libgz-msgs10-dev \
+  libpcl-dev
+```
+
+## 建置
+
+主專案與 Gazebo plugin：
 
 ```bash
 mkdir -p build
-cd build
-cmake ..
-make
+cmake -S . -B build
+cmake --build build --target navigation_octree
+cmake --build build --target test_octree
+cmake --build build --target dynamic_world_cloud
 ```
 
-編譯完成後，可執行：
+Octree viewer：
 
 ```bash
-./navigation_node
+cmake -S scripts -B build/octree_viewer
+cmake --build build/octree_viewer
 ```
 
-## 即時 3D 點雲顯示
-
-專案已提供一個簡單的即時 PyVista 3D viewer，結合 C++ bridge 與 Python client，將 Gazebo 點雲直接顯示為彩色 3D 點雲。
-
-1. 在 build 目錄啟動 C++ bridge：
+測試：
 
 ```bash
-cd build
-./pointcloud_bridge
+./build/test_octree
 ```
 
-2. 在專案根目錄啟動 Python viewer：
+## 快速執行
+
+Terminal 1：啟動 Gazebo simulation。
 
 ```bash
-cd /home/ruilun/project/navigation_project
-source venv/bin/activate
-python3 scripts/visualize_pointcloud_realtime.py
+./run_gazebo.sh gazebo/maps/warehouse_world.sdf -s -r -v 2
 ```
 
-3. 若尚未安裝 PyVista：
+Terminal 2：啟動即時 Octree 視覺化。
 
 ```bash
-pip install pyvista numpy
+./build/octree_viewer/visualize_octree_gazebo \
+  --partition dynamic_cloud_test \
+  --topic /world/dynamic_cloud \
+  --no-points \
+  --voxel-mode center-boxes \
+  --max-voxels 2000 \
+  --max-render-points 80000 \
+  --rebuild-hz 1
 ```
 
-如果 Gazebo sensor 正常輸出 point cloud，這個 viewer 應該會即時呈現當前場景的 3D 點雲分佈。
+如果畫面太卡，改用較輕量模式：
+
+```bash
+./build/octree_viewer/visualize_octree_gazebo \
+  --partition dynamic_cloud_test \
+  --no-points \
+  --voxel-mode centers \
+  --max-voxels 3000 \
+  --max-render-points 40000 \
+  --rebuild-hz 0.5
+```
+
+## Gazebo 點雲資料流
+
+目前 `warehouse_world.sdf` 會載入 `DynamicWorldCloud` plugin。
+
+Plugin 會：
+
+1. 掃描 world 內的 collision geometry。
+2. 依照 `point_spacing` 取樣成 local point cloud。
+3. 將 local cloud cache 起來。
+4. 在 `PostUpdate()` 依照 `update_rate` 轉成 world coordinates。
+5. 發布 `gz::msgs::PointCloudPacked` 到 `/world/dynamic_cloud`。
+6. Viewer 訂閱 topic，轉成 `std::vector<navigation::Point3D>`。
+7. `OctreeManager` 建立 Octree 並交給 PCLVisualizer 顯示。
+
+## 常用視覺化模式
+
+只看 voxel center，速度最快：
+
+```bash
+--no-points --voxel-mode centers
+```
+
+看 voxel center 加上體積邊框，適合展示：
+
+```bash
+--no-points --voxel-mode center-boxes --max-voxels 2000
+```
+
+保留原始點雲形狀，同時顯示少量 voxel box：
+
+```bash
+--voxel-mode hybrid
+```
+
+完整 wireframe voxel，最直觀但較卡：
+
+```bash
+--voxel-mode boxes --max-voxels 1000
+```
+
+## 重要參數
+
+Gazebo plugin 參數在 [gazebo/maps/warehouse_world.sdf](gazebo/maps/warehouse_world.sdf)：
+
+- `point_spacing`：collision 幾何取樣密度。
+- `update_rate`：點雲發布頻率。
+- `max_points_per_publish`：每次最多發布點數。
+- `transport_topic`：目前為 `/world/dynamic_cloud`。
+- `pcd_save_interval`：是否定期輸出 PCD。
+
+Viewer 參數：
+
+- `--partition`：Gazebo Transport partition，需和 Gazebo 相同。
+- `--topic`：訂閱 topic，預設 `/world/dynamic_cloud`。
+- `--max-depth`：Octree 最大深度。
+- `--max-voxels`：最多顯示多少 leaf voxel。
+- `--max-render-points`：viewer 端最多使用多少點建 Octree。
+- `--rebuild-hz`：每秒最多重建與刷新幾次。
+- `--voxel-mode`：`centers`、`boxes`、`hybrid`、`center-boxes`。
+- `--no-points`：不顯示原始白色點雲。
+- `--label-color`：用語義 label 上色，而不是 Octree depth。
+
+## 狀態與後續工作
+
+已完成：
+
+- Gazebo collision geometry ground-truth cloud plugin
+- `/world/dynamic_cloud` Gazebo Transport 資料流
+- Linear Octree 與 adaptive voxel sizing
+- PCL 即時 Octree 視覺化
+
+後續可擴充：
+
+- 將 ML 模型輸出接到 `PointCloudSample` / `MLResult`
+- 自動 room id 標記
+- 樓梯區域 semantic label 與 cross-floor edge
+- 3D A* 或 Hybrid A* path planner
+- 將 planner cost 與 `computeTraversalInfo()` 串接

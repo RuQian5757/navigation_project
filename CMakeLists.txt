@@ -31,24 +31,28 @@ add_executable(test_octree
 
 target_link_libraries(test_octree PRIVATE navigation_octree)
 
-add_executable(pointcloud_bridge
-    src/pointcloud_bridge.cpp
-)
+if(EXISTS "${PROJECT_SOURCE_DIR}/src/pointcloud_bridge.cpp")
+    add_executable(pointcloud_bridge
+        src/pointcloud_bridge.cpp
+    )
 
-target_link_libraries(pointcloud_bridge PRIVATE 
-    navigation_octree
-    gz-transport13::gz-transport13
-    gz-msgs10::gz-msgs10
-)
+    target_link_libraries(pointcloud_bridge PRIVATE
+        navigation_octree
+        gz-transport13::gz-transport13
+        gz-msgs10::gz-msgs10
+    )
+endif()
 
-add_executable(test_dynamic_cloud
-    src/test_dynamic_cloud.cpp
-)
+if(EXISTS "${PROJECT_SOURCE_DIR}/src/test_dynamic_cloud.cpp")
+    add_executable(test_dynamic_cloud
+        src/test_dynamic_cloud.cpp
+    )
 
-target_link_libraries(test_dynamic_cloud PRIVATE
-    gz-transport13::gz-transport13
-    gz-msgs10::gz-msgs10
-)
+    target_link_libraries(test_dynamic_cloud PRIVATE
+        gz-transport13::gz-transport13
+        gz-msgs10::gz-msgs10
+    )
+endif()
 
 add_custom_target(check COMMAND test_octree)
 

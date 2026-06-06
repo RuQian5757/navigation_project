@@ -25,13 +25,13 @@
   - `density`
   - `depth`
   - `max_depth`
-- 若 `point_count < 5`，將不繼續分割，避免稀疏點導致過多葉節點。
+- 目前 `OctreeConfig::min_points_to_split` 預設為 6。點數低於此值時不繼續分割，避免稀疏點導致過多葉節點。
 
 ### 多樓層與樓梯跨層連通性
 
 - 每個 leaf voxel 支援 `is_cross_floor` 標記。
 - 標記樓梯 voxel 為 `VoxelLabel::Stair`，並且可直接透過 `isCrossFloorConnected()` 判斷。
-- 即使相鄰 voxel 深度不同，也會透過中心點查找取得上下層 leaf，處理深度不一致情況。
+- 即使相鄰 voxel 深度不同，也會沿著 voxel face 取多個 probe point，再從 root 回查 containing leaf，處理深度不一致情況。
 
 ### 機器學習語義標籤
 
@@ -63,7 +63,7 @@
 
 ### 稀疏點與長形結構處理
 
-- 若 `num_points < 5`，則保留 leaf，避免因稀疏點產生過多無用子節點。
+- 若點數低於 `min_points_to_split`，則保留 leaf，避免因稀疏點產生過多無用子節點。
 - 對走廊等長形低密度區域採用更大 voxel，以節省計算與記憶體。
 
 ### Linear Octree 特性
@@ -88,6 +88,8 @@
 - `src/octree_manager.cpp`：Octree 核心實作。
 - `src/main.cpp`：簡單執行範例。
 - `tests/test_octree.cpp`：功能驗證測試。
+- `scripts/visualize_octree_gazebo.cpp`：訂閱 Gazebo `/world/dynamic_cloud` 的即時 Octree viewer。
+- `docs/project_workflow.md`：目前專案完整操作流程。
 
 ## 建議後續擴充
 
