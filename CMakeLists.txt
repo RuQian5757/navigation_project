@@ -41,4 +41,15 @@ target_link_libraries(pointcloud_bridge PRIVATE
     gz-msgs10::gz-msgs10
 )
 
+add_executable(test_dynamic_cloud
+    src/test_dynamic_cloud.cpp
+)
+
+target_link_libraries(test_dynamic_cloud PRIVATE
+    gz-transport13::gz-transport13
+    gz-msgs10::gz-msgs10
+)
+
 add_custom_target(check COMMAND test_octree)
+
+add_subdirectory(dynamic_world_cloud)

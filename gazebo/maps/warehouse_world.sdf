@@ -15,16 +15,24 @@
     <!-- Scene broadcaster: sends simulation updates to GUI -->
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
 
-    <!-- Sensors system: enables simulated sensors -->
-    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
-      <render_engine>ogre</render_engine>
+    <!-- Dynamic world cloud plugin: publishes /world/dynamic_cloud -->
+    <plugin filename="DynamicWorldCloud" name="DynamicWorldCloud">
+      <point_spacing>0.25</point_spacing>
+      <update_rate>10</update_rate>
+      <pcd_save_interval>0.0</pcd_save_interval>
+      <publish_enabled>true</publish_enabled>
+      <max_points_per_publish>50000</max_points_per_publish>
+      <pcd_directory>./pcd</pcd_directory>
+      <transport_topic>/world/dynamic_cloud</transport_topic>
     </plugin>
 
     <!-- ===================================================== -->
-    <!-- 3D DEPTH CAMERA SENSOR FOR POINT CLOUD GENERATION -->
+    <!-- 3D DEPTH CAMERA MODEL -->
     <!-- ===================================================== -->
-    <!-- This sensor will generate point cloud data at high resolution -->
-    <!-- For Gazebo Fortress/Garden (not ROS1) -->
+    <!-- The ground-truth cloud plugin reads collision geometry directly, so
+         the Sensors system is intentionally not loaded. Keeping this model
+         preserves the original camera frame placement without starting the
+         depth-camera render pipeline that was causing server instability. -->
 
     <model name="depth_camera_frame">
       <static>true</static>
@@ -44,8 +52,6 @@
               <far>25</far>
             </clip>
           </camera>
-          <!-- Native Gazebo depth camera - no ROS plugin needed -->
-          <!-- To use with ROS2, install gz-ros2-humble or similar -->
           <visualize>true</visualize>
           <always_on>true</always_on>
           <update_rate>10</update_rate>

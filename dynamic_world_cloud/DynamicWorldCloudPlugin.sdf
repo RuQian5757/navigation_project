@@ -1,0 +1,14 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="default">
+    <plugin name="DynamicWorldCloud" filename="DynamicWorldCloud">
+      <point_spacing>0.25</point_spacing>
+      <update_rate>1.0</update_rate>
+      <pcd_save_interval>0.0</pcd_save_interval>
+      <publish_enabled>true</publish_enabled>
+      <max_points_per_publish>50000</max_points_per_publish>
+      <pcd_directory>./pcd</pcd_directory>
+      <transport_topic>/world/dynamic_cloud</transport_topic>
+    </plugin>
+  </world>
+</sdf>
