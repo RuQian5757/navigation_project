@@ -36,6 +36,7 @@ scripts/visualize_octree_gazebo.cpp   即時 Gazebo Octree viewer
 scripts/visualize_pointcloud_realtime.py Python 即時點雲 viewer
 scripts/run_gazebo.sh                 Gazebo simulation 啟動腳本
 scripts/run_visualization.sh          Octree / pointcloud 共用啟動腳本
+scripts/run_visualization_rf.sh       RF 標記 Octree viewer 啟動腳本
 scripts/run_feature_export.sh         Gazebo leaf feature CSV 共用底層腳本
 scripts/run_feature_export_predict.sh 產生模型評估用 predict feature CSV
 scripts/run_feature_export_rf.sh      產生 RF 已推論 feature CSV
@@ -127,10 +128,19 @@ data/predicted_leaf_features.csv
 
 ```bash
 ./scripts/run_feature_export_rf.sh
-OCTREE_RF_MODEL=models/random_forest_voxel_model.rf.txt ./scripts/run_visualization.sh octree
+./scripts/run_visualization_rf.sh
 ```
 
 `.pkl` 主要給 Python 使用；`.rf.txt` 是 C++17 exporter / viewer / `OctreeManager::setMLPredictor()` 使用的輕量模型格式。
+
+若要視覺化比較理想標記與 RF 預測，可開兩個 viewer：
+
+```bash
+./scripts/run_visualization.sh octree
+./scripts/run_visualization_rf.sh
+```
+
+第一個使用 Gazebo semantic label，第二個使用 RF 預測後的 leaf label / probability。
 
 若要產生一份給 `python/train_model.py` 評估 accuracy 的 predict feature CSV，使用：
 

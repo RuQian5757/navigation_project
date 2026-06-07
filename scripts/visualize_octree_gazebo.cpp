@@ -51,6 +51,7 @@ struct Options {
     ColorMode color_mode = ColorMode::Probability;
     VoxelMode voxel_mode = VoxelMode::Centers;
     std::string rf_model;
+    std::string title = "Realtime Navigation Octree";
 };
 
 struct LatestCloud {
@@ -79,6 +80,7 @@ void printUsage(const char* program) {
         << "  --probability-color   Color voxels by obstacle probability\n"
         << "  --color-mode MODE     depth, label, or probability; default probability\n"
         << "  --rf-model FILE       Apply a C++ Random Forest text model before rendering\n"
+        << "  --title TEXT          Viewer window title prefix\n"
         << "  --help                Show this message\n\n"
         << "Build:\n"
         << "  cmake -S scripts -B build/octree_viewer\n"
@@ -138,6 +140,8 @@ bool parseArgs(int argc, char** argv, Options& options) {
             }
         } else if (arg == "--rf-model" && i + 1 < argc) {
             options.rf_model = argv[++i];
+        } else if (arg == "--title" && i + 1 < argc) {
+            options.title = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
             printUsage(argv[0]);
             return false;
@@ -628,7 +632,7 @@ int main(int argc, char** argv) {
     std::cout << "Subscribed to " << options.topic
               << " on GZ_PARTITION=" << options.partition << "\n";
 
-    pcl::visualization::PCLVisualizer viewer("Realtime Navigation Octree");
+    pcl::visualization::PCLVisualizer viewer(options.title);
     viewer.setBackgroundColor(0.04, 0.04, 0.05);
     viewer.addCoordinateSystem(1.0);
     viewer.initCameraParameters();
@@ -693,7 +697,7 @@ int main(int argc, char** argv) {
             last_rebuild = now;
 
             std::ostringstream title;
-            title << "Realtime Navigation Octree | frame=" << frame
+            title << options.title << " | frame=" << frame
                   << " source_points=" << source_points
                   << " rendered_points=" << samples.size()
                   << " leaves=" << octree.getLeafCount()
@@ -701,7 +705,7 @@ int main(int argc, char** argv) {
             viewer.setWindowName(title.str());
             std::cout << title.str() << "\n";
         } else if (frame == 0) {
-            viewer.setWindowName("Realtime Navigation Octree | " + status);
+            viewer.setWindowName(options.title + " | " + status);
         }
 
         viewer.spinOnce(16);

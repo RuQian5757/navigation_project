@@ -455,11 +455,26 @@ PREDICT_FEATURE_MAX_POINTS=50000 PREDICT_FEATURE_EXPORT_HZ=0.5 ./scripts/run_fea
 
 ### Terminal 4：啟動即時 Octree 視覺化
 
-推薦展示模式：
+推薦展示模式，使用 Gazebo semantic label / probability：
 
 ```bash
 ./scripts/run_visualization.sh octree
 ```
+
+如果要顯示 RF 預測後的 Octree：
+
+```bash
+./scripts/run_visualization_rf.sh
+```
+
+若要比較理想 semantic 與 RF 預測，開兩個 terminal：
+
+```bash
+./scripts/run_visualization.sh octree
+./scripts/run_visualization_rf.sh
+```
+
+兩個 viewer 會使用不同視窗標題，方便比較顏色與 voxel 分布差異。
 
 若覺得邊框太卡，可以改成只顯示 voxel center：
 
@@ -496,6 +511,7 @@ OCTREE_HIDE_POINTS=0 ./scripts/run_visualization.sh octree
 - `OCTREE_VOXEL_MODE`：`centers`、`boxes`、`hybrid`、`center-boxes`。
 - `OCTREE_HIDE_POINTS`：`1` 隱藏原始點雲，`0` 顯示原始點雲。
 - `OCTREE_COLOR_MODE`：`depth`、`label`、`probability`，腳本預設為 `probability`。
+- `OCTREE_WINDOW_TITLE`：viewer 視窗標題，適合同時開 ideal / RF predicted 視窗時區分。
 - `OCTREE_RF_MODEL`：指定 `models/random_forest_voxel_model.rf.txt` 時，viewer 端 Octree 會使用 RF 模型推論 leaf label / probability。
 - `POINTCLOUD_POINT_SIZE`：Python pointcloud viewer 點大小。
 - `POINTCLOUD_MAX_RENDER_POINTS`：Python pointcloud viewer 最多顯示點數。
@@ -564,6 +580,10 @@ Viewer 每秒最多解析、重建 Octree、刷新畫面的次數。預設是 `1
 `--rf-model`
 
 載入 `python/train_model.py` 產生的 C++ Random Forest text model。viewer 建構 Octree 並計算 leaf 幾何特徵後，會用模型推論 `label` 與 `obstacle_probability`，再依目前 color mode 顯示。
+
+`--title`
+
+設定 viewer 視窗標題前綴。`scripts/run_visualization.sh octree` 預設是 `Gazebo Semantic Navigation Octree`，`scripts/run_visualization_rf.sh` 預設是 `RF Predicted Navigation Octree`。
 
 Stair / cross-floor voxel 在所有 color mode 下都會固定顯示為亮紫紅色，不會因樓梯的低障礙概率或 depth 色階而變淡。
 

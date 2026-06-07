@@ -7,6 +7,7 @@ set -euo pipefail
 #
 # Usage:
 #   ./scripts/run_visualization.sh octree
+#   ./scripts/run_visualization.sh octree-rf
 #   ./scripts/run_visualization.sh pointcloud
 #
 # You can override any setting from the command line, for example:
@@ -34,6 +35,9 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Compiled C++ realtime Octree viewer.
 : "${OCTREE_VIEWER_BIN:=${PROJECT_ROOT}/build/octree_viewer/visualize_octree_gazebo}"
+
+# Window title prefix. Useful when comparing ideal semantic vs RF predicted views.
+: "${OCTREE_WINDOW_TITLE:=Realtime Navigation Octree}"
 
 # Maximum Octree depth used by the viewer-side OctreeManager.
 # Larger values allow smaller voxels, but may produce more leaves.
@@ -111,7 +115,8 @@ Usage:
   ./scripts/run_visualization.sh pointcloud [extra pointcloud viewer args...]
 
 Modes:
-  octree      Subscribe /world/dynamic_cloud and show realtime Octree voxels.
+  octree      Show realtime Octree voxels using Gazebo semantic labels.
+  octree-rf   Show realtime Octree voxels using RF-predicted labels.
   pointcloud  Subscribe /world/dynamic_cloud and show raw point cloud only.
 
 Common environment overrides:
@@ -120,6 +125,7 @@ Common environment overrides:
 
 Octree overrides:
   OCTREE_MAX_DEPTH
+  OCTREE_WINDOW_TITLE
   OCTREE_MAX_VOXELS
   OCTREE_MAX_RENDER_POINTS
   OCTREE_REBUILD_HZ
@@ -148,7 +154,16 @@ fi
 export GZ_PARTITION="${GZ_PARTITION_VALUE}"
 
 case "${mode}" in
-  octree)
+  octree|octree-rf)
+    if [ "${mode}" = "octree-rf" ]; then
+      : "${OCTREE_RF_MODEL:=${PROJECT_ROOT}/models/random_forest_voxel_model.rf.txt}"
+      if [ "${OCTREE_WINDOW_TITLE}" = "Realtime Navigation Octree" ]; then
+        OCTREE_WINDOW_TITLE="RF Predicted Navigation Octree"
+      fi
+    elif [ "${OCTREE_WINDOW_TITLE}" = "Realtime Navigation Octree" ]; then
+      OCTREE_WINDOW_TITLE="Gazebo Semantic Navigation Octree"
+    fi
+
     if [ ! -x "${OCTREE_VIEWER_BIN}" ]; then
       cat >&2 <<EOF
 ERROR: Octree viewer not found or not executable:
@@ -170,6 +185,7 @@ EOF
       --rebuild-hz "${OCTREE_REBUILD_HZ}"
       --voxel-mode "${OCTREE_VOXEL_MODE}"
       --color-mode "${OCTREE_COLOR_MODE}"
+      --title "${OCTREE_WINDOW_TITLE}"
     )
 
     if [ "${OCTREE_HIDE_POINTS}" = "1" ]; then
