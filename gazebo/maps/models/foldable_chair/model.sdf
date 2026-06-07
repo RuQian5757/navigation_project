@@ -7,7 +7,7 @@
         <geometry>
           <mesh>
             <scale>0.1 0.1 0.1</scale>
-            <uri>mesh/foldable_chair.dae</uri>
+            <uri>model://foldable_chair/mesh/foldable_chair.dae</uri>
           </mesh>
         </geometry>
       </visual>

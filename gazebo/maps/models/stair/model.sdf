@@ -1,19 +1,8 @@
 <?xml version="1.0"?>
 <sdf version="1.11">
   <model name="stair">
-    <static>true</static>
     <link name="body">
-      <inertial>
-        <mass>1.0</mass>
-        <inertia>
-          <ixx>1.0</ixx>
-          <iyy>1.0</iyy>
-          <izz>1.0</izz>
-          <ixy>0.0</ixy>
-          <ixz>0.0</ixz>
-          <iyz>0.0</iyz>
-        </inertia>
-      </inertial>
+      <inertial auto="true" />
       <collision name="collision">
         <density>10.0</density>
         <geometry>
@@ -29,9 +18,9 @@
           </mesh>
         </geometry>
           <material>
-            <ambient>0.45 0.45 0.45 1</ambient>
-            <diffuse>0.55 0.55 0.55 1</diffuse>
-            <specular>0.15 0.15 0.15 1</specular>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
           </material>
       </visual>
     </link>

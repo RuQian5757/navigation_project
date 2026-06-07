@@ -1,5 +1,5 @@
 <sdf version='1.10'>
-  <world name='warehouse_world'>
+  <world name='warehouse_predict_world'>
     <plugin name='gz::sim::systems::Physics' filename='gz-sim-physics-system'/>
     <plugin name='gz::sim::systems::UserCommands' filename='gz-sim-user-commands-system'/>
     <plugin name='gz::sim::systems::SceneBroadcaster' filename='gz-sim-scene-broadcaster-system'/>
@@ -268,263 +268,7 @@
         <pose>0 0 0 0 0 0</pose>
         <enable_wind>false</enable_wind>
       </link>
-      <pose>0 0 4 0 0 0</pose>
-      <self_collide>false</self_collide>
-    </model>
-    <model name='aws_robomaker_warehouse_ClutteringC_01'>
-      <link name='link'>
-        <collision name='collision'>
-          <geometry>
-            <mesh>
-              <uri>model://aws_robomaker_warehouse_ClutteringC_01/meshes/aws_robomaker_warehouse_ClutteringC_01_collision.DAE</uri>
-            </mesh>
-          </geometry>
-          <surface>
-            <friction>
-              <ode>
-                <mu>0.59999999999999998</mu>
-                <mu2>0.59999999999999998</mu2>
-                <fdir1>0 0 0</fdir1>
-                <slip1>0</slip1>
-                <slip2>0</slip2>
-              </ode>
-              <torsional>
-                <coefficient>1</coefficient>
-                <patch_radius>0</patch_radius>
-                <surface_radius>0</surface_radius>
-                <use_patch_radius>true</use_patch_radius>
-                <ode>
-                  <slip>0</slip>
-                </ode>
-              </torsional>
-            </friction>
-          </surface>
-        </collision>
-        <visual name='visual'>
-          <geometry>
-            <mesh>
-              <uri>model://aws_robomaker_warehouse_ClutteringC_01/meshes/aws_robomaker_warehouse_ClutteringC_01_visual.DAE</uri>
-            </mesh>
-          </geometry>
-          <meta>
-            <layer>1</layer>
-          </meta>
-        </visual>
-        <pose>0 0 0 0 0 0</pose>
-        <inertial>
-          <pose>0 0 0 0 0 0</pose>
-          <mass>1</mass>
-          <inertia>
-            <ixx>1</ixx>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyy>1</iyy>
-            <iyz>0</iyz>
-            <izz>1</izz>
-          </inertia>
-        </inertial>
-        <enable_wind>false</enable_wind>
-      </link>
-      <static>true</static>
-      <pose>-8.7292699813842773 3.9761483669281006 1 0 0 0</pose>
-      <self_collide>false</self_collide>
-    </model>
-    <model name='aws_robomaker_warehouse_ClutteringC_01_0'>
-      <link name='link'>
-        <collision name='collision'>
-          <geometry>
-            <mesh>
-              <uri>model://aws_robomaker_warehouse_ClutteringC_01/meshes/aws_robomaker_warehouse_ClutteringC_01_collision.DAE</uri>
-            </mesh>
-          </geometry>
-          <surface>
-            <friction>
-              <ode>
-                <mu>0.59999999999999998</mu>
-                <mu2>0.59999999999999998</mu2>
-                <fdir1>0 0 0</fdir1>
-                <slip1>0</slip1>
-                <slip2>0</slip2>
-              </ode>
-              <torsional>
-                <coefficient>1</coefficient>
-                <patch_radius>0</patch_radius>
-                <surface_radius>0</surface_radius>
-                <use_patch_radius>true</use_patch_radius>
-                <ode>
-                  <slip>0</slip>
-                </ode>
-              </torsional>
-            </friction>
-          </surface>
-        </collision>
-        <visual name='visual'>
-          <geometry>
-            <mesh>
-              <uri>model://aws_robomaker_warehouse_ClutteringC_01/meshes/aws_robomaker_warehouse_ClutteringC_01_visual.DAE</uri>
-            </mesh>
-          </geometry>
-          <meta>
-            <layer>1</layer>
-          </meta>
-        </visual>
-        <pose>0 0 0 0 0 0</pose>
-        <inertial>
-          <pose>0 0 0 0 0 0</pose>
-          <mass>1</mass>
-          <inertia>
-            <ixx>1</ixx>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyy>1</iyy>
-            <iyz>0</iyz>
-            <izz>1</izz>
-          </inertia>
-        </inertial>
-        <enable_wind>false</enable_wind>
-      </link>
-      <static>true</static>
-      <pose>-3.7143199999999998 7.3302899999999998 1 0 0 0</pose>
-      <self_collide>false</self_collide>
-    </model>
-    <model name='aws_robomaker_warehouse_ClutteringA_01'>
-      <link name='link'>
-        <collision name='collision'>
-          <geometry>
-            <mesh>
-              <uri>model://aws_robomaker_warehouse_ClutteringA_01/meshes/aws_robomaker_warehouse_ClutteringA_01_collision.DAE</uri>
-            </mesh>
-          </geometry>
-          <surface>
-            <friction>
-              <ode>
-                <mu>0.59999999999999998</mu>
-                <mu2>0.59999999999999998</mu2>
-                <fdir1>0 0 0</fdir1>
-                <slip1>0</slip1>
-                <slip2>0</slip2>
-              </ode>
-              <torsional>
-                <coefficient>1</coefficient>
-                <patch_radius>0</patch_radius>
-                <surface_radius>0</surface_radius>
-                <use_patch_radius>true</use_patch_radius>
-                <ode>
-                  <slip>0</slip>
-                </ode>
-              </torsional>
-            </friction>
-          </surface>
-        </collision>
-        <visual name='visual'>
-          <geometry>
-            <mesh>
-              <uri>model://aws_robomaker_warehouse_ClutteringA_01/meshes/aws_robomaker_warehouse_ClutteringA_01_visual.DAE</uri>
-            </mesh>
-          </geometry>
-          <meta>
-            <layer>1</layer>
-          </meta>
-        </visual>
-        <pose>0 0 0 0 0 0</pose>
-        <inertial>
-          <pose>0 0 0 0 0 0</pose>
-          <mass>1</mass>
-          <inertia>
-            <ixx>1</ixx>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyy>1</iyy>
-            <iyz>0</iyz>
-            <izz>1</izz>
-          </inertia>
-        </inertial>
-        <enable_wind>false</enable_wind>
-      </link>
-      <static>true</static>
-      <pose>5.1830299999999996 2.9447700000000001 1 0 0 0</pose>
-      <self_collide>false</self_collide>
-    </model>
-    <model name='wall_10x0.15x3'>
-      <static>true</static>
-      <link name='body'>
-        <inertial>
-          <mass>1</mass>
-          <inertia>
-            <ixx>1</ixx>
-            <iyy>1</iyy>
-            <izz>1</izz>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyz>0</iyz>
-          </inertia>
-          <pose>0 0 0 0 0 0</pose>
-        </inertial>
-        <collision name='collision'>
-          <density>10</density>
-          <geometry>
-            <mesh optimization='convex_decomposition'>
-              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
-            </mesh>
-          </geometry>
-        </collision>
-        <visual name='visual'>
-          <geometry>
-            <mesh>
-              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
-            </mesh>
-          </geometry>
-          <material>
-            <ambient>1 1 1 1</ambient>
-            <diffuse>1 1 1 1</diffuse>
-            <specular>0.200000003 0.200000003 0.200000003 1</specular>
-          </material>
-        </visual>
-        <pose>0 0 0 0 0 0</pose>
-        <enable_wind>false</enable_wind>
-      </link>
-      <pose>-0.61228889226913463 -4.9785366058349627 0 0 0 1.5700000841906609</pose>
-      <self_collide>false</self_collide>
-    </model>
-    <model name='wall_10x0.15x3_0'>
-      <static>true</static>
-      <link name='body'>
-        <inertial>
-          <mass>1</mass>
-          <inertia>
-            <ixx>1</ixx>
-            <iyy>1</iyy>
-            <izz>1</izz>
-            <ixy>0</ixy>
-            <ixz>0</ixz>
-            <iyz>0</iyz>
-          </inertia>
-          <pose>0 0 0 0 0 0</pose>
-        </inertial>
-        <collision name='collision'>
-          <density>10</density>
-          <geometry>
-            <mesh optimization='convex_decomposition'>
-              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
-            </mesh>
-          </geometry>
-        </collision>
-        <visual name='visual'>
-          <geometry>
-            <mesh>
-              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
-            </mesh>
-          </geometry>
-          <material>
-            <ambient>1 1 1 1</ambient>
-            <diffuse>1 1 1 1</diffuse>
-            <specular>0.200000003 0.200000003 0.200000003 1</specular>
-          </material>
-        </visual>
-        <pose>0 0 0 0 0 0</pose>
-        <enable_wind>false</enable_wind>
-      </link>
-      <pose>3.2311499118804923 6.057741641998291 0 0 0 0.61059997807368671</pose>
+      <pose>0 0 8 0 0 0</pose>
       <self_collide>false</self_collide>
     </model>
     <include>
@@ -550,72 +294,87 @@
     <include>
       <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair</uri>
       <name>stair_0</name>
-      <pose>-7.5000000000000009 -3.5000000000000004 0.90000000000000002 0 0 1.5700000000000001</pose>
+      <pose>-7.5 -3.5 4.9000000000000004 0 0 1.5700000000000001</pose>
     </include>
     <include>
       <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/floor_2</uri>
       <name>floor_2</name>
-      <pose>0 0 8 0 0 3.1400000000000001</pose>
+      <pose>0 0 4 0 0 3.1400000000000001</pose>
     </include>
     <include>
       <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair</uri>
       <name>stair</name>
-      <pose>-1.6000000000000003 -0.20000000000000007 4.9000000000000004 0 0 -1.5700000000000001</pose>
+      <pose>-1.6000000000000003 -0.20000000000000004 0.90000000000000036 0 0 -1.5700000000000001</pose>
     </include>
     <include>
       <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair</uri>
       <name>stair_1</name>
-      <pose>7.5000000000000018 2 4.9000000000000004 0 0 1.5700000000000001</pose>
+      <pose>7.5 1.9999999999999998 0.89999999999999991 0 0 1.5700000000000001</pose>
     </include>
     <include>
       <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3</uri>
-      <name>wall_10x0.15x3_1</name>
-      <pose>-3.4681730270385742 -4.7017836570739746 5 0 0 1.5700000042340219</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3</uri>
-      <name>wall_2x0.15x3</name>
-      <pose>-2.9329948425292969 1.1228744983673096 5 0 0 1.0297000405310657</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3</uri>
-      <name>wall_20x0.15x3_7</name>
-      <pose>3.8280336856842041 -1.2445913553237915 5 0 0 -1.0463800066485029</pose>
+      <name>wall_10x0.15x3</name>
+      <pose>2.1763043403625488 5.2441096305847168 0 0 0 -1.2614100502650951</pose>
     </include>
     <include>
       <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringC_01</uri>
-      <name>aws_robomaker_warehouse_ClutteringC_01_1</name>
-      <pose>-4.5483059883117676 6.445429801940918 5 0 0 0</pose>
+      <name>aws_robomaker_warehouse_ClutteringC_01</name>
+      <pose>-1.5369269847869873 -4.5516400337219238 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringC_01</uri>
+      <name>aws_robomaker_warehouse_ClutteringC_01_0</name>
+      <pose>-6.19137 4.1245799999999999 1 0 0 0</pose>
+    </include>
+    <include>
+      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringA_01</uri>
+      <name>aws_robomaker_warehouse_ClutteringA_01</name>
+      <pose>6.6818200000000001 -5.6500599999999999 1 0 0 0</pose>
     </include>
     <include>
       <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringA_01</uri>
       <name>aws_robomaker_warehouse_ClutteringA_01_0</name>
-      <pose>3.7193734645843506 8.7842998504638672 5 0 0 0</pose>
+      <pose>2.9411499999999999 -2.7795200000000002 1 0 0 0</pose>
+    </include>
+    <include>
+      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3</uri>
+      <name>wall_2x0.15x3</name>
+      <pose>5.4284800000000004 5.1823100000000002 1 0 0 3.1248800000000001</pose>
+    </include>
+    <include>
+      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3</uri>
+      <name>wall_2x0.15x3_0</name>
+      <pose>3.08229 -7.2313799999999997 1 0 0 -1.3428</pose>
+    </include>
+    <include>
+      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3</uri>
+      <name>wall_2x0.15x3_1</name>
+      <pose>-5.0164900000000001 -5.04467 1 0 0 -0.75180899999999973</pose>
     </include>
     <include>
       <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/foldable_chair</uri>
       <name>foldable_chair</name>
-      <pose>1.9670028686523438 4.8665776252746582 5 0 0 -0.96885401812679506</pose>
+      <pose>1.0571224689483643 -0.56957697868347168 1 0 0 0</pose>
     </include>
     <include>
       <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/Desk</uri>
       <name>Desk</name>
-      <pose>1.4039599895477295 4.4330501556396484 5 0 0 0.60936702756792926</pose>
+      <pose>1.2558599710464478 0.78299599885940574 1 0 0 -2.0153606440958973</pose>
     </include>
     <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/Desk</uri>
-      <name>Desk_0</name>
-      <pose>-1.8503159284591675 -7.8603701591491699 5 0 0 0</pose>
+      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3</uri>
+      <name>wall_10x0.15x3_0</name>
+      <pose>1.3673908710479736 -4.9921951293945312 4 0 0 -1.5792499977038392</pose>
     </include>
     <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringC_01</uri>
-      <name>aws_robomaker_warehouse_ClutteringC_01_2</name>
-      <pose>1.4222300052642822 -6.9777255058288574 5 0 0 0</pose>
+      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3</uri>
+      <name>wall_10x0.15x3_1</name>
+      <pose>-4.3754544258117676 1.9656996726989746 4 0 0 -1.4886300185481876</pose>
     </include>
     <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringA_01</uri>
-      <name>aws_robomaker_warehouse_ClutteringA_01_1</name>
-      <pose>-8.5416202545166016 2.3910784721374512 5 0 0 0</pose>
+      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3</uri>
+      <name>wall_10x0.15x3_2</name>
+      <pose>1.8626023530960083 4.1316070556640625 4 0 0 -0.96368699434126215</pose>
     </include>
     <light name='sun' type='directional'>
       <pose>0 0 10 0 0 0</pose>
