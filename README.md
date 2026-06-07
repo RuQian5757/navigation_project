@@ -94,13 +94,27 @@ Terminal 2：啟動即時 Octree 視覺化。
 Terminal 2 也可以改成輸出 Random Forest 訓練 CSV，不需要開 viewer：
 
 ```bash
-./scripts/run_feature_export.sh
+FEATURE_TRAIN=1 ./scripts/run_feature_export.sh
 ```
 
 預設會訂閱 `/world/dynamic_cloud`，每秒最多重建一次 Octree，並輸出：
 
 ```text
-data/leaf_features.csv
+data/train_leaf_features.csv
+```
+
+訓練 Random Forest model：
+
+```bash
+venv/bin/python3 python/train_model.py
+```
+
+預設會讀取 `data/train_*.csv` 作為訓練資料，並自動將 `data/` 中非 `train_`、非 `predicted_` 開頭的 CSV 當作待預測資料，例如 `data/leaf_features.csv`。輸出：
+
+```text
+models/random_forest_voxel_model.pkl
+models/random_forest_voxel_report.json
+data/predicted_leaf_features.csv
 ```
 
 如果畫面太卡，改用較輕量模式：
@@ -226,10 +240,10 @@ FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 - PCL 即時 Octree 視覺化
 - Gazebo semantic point fields：`label`、`obstacle_probability`、`entity_id`
 - 樓梯 voxel 高亮與 cross-floor flag
+- Random Forest 訓練腳本 `python/train_model.py`
 
 後續可擴充：
 
-- 將 `python/train_model.py` 接上 `data/leaf_features.csv`
 - 將 ML 模型輸出接到 `PointCloudSample` / `MLResult`
 - 自動 room id 標記
 - 3D A* 或 Hybrid A* path planner

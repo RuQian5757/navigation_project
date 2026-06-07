@@ -1,0 +1,325 @@
+{
+  "trained_at": "2026-06-07T08:13:34.220785+00:00",
+  "train_files": [
+    "data/train_leaf_features.csv"
+  ],
+  "prediction_files": [
+    "data/leaf_features.csv"
+  ],
+  "rows_total": 16463,
+  "rows_train": 13170,
+  "rows_test": 3293,
+  "skipped_rows": 0,
+  "loaded_rows_by_file": {
+    "data/train_leaf_features.csv": 16463
+  },
+  "label_counts": {
+    "0": 6613,
+    "1": 9074,
+    "2": 776
+  },
+  "feature_columns": [
+    "min_x",
+    "min_y",
+    "min_z",
+    "max_x",
+    "max_y",
+    "max_z",
+    "num_points",
+    "voxel_volume",
+    "density",
+    "log_density",
+    "surface_density",
+    "voxel_size",
+    "depth",
+    "normalized_depth",
+    "center_x",
+    "center_y",
+    "center_z",
+    "story_index",
+    "story_local_z",
+    "relative_height_from_floor",
+    "relative_distance_to_ceiling",
+    "height_ratio",
+    "is_near_floor",
+    "is_near_ceiling",
+    "avg_normal_x",
+    "avg_normal_y",
+    "avg_normal_z",
+    "normal_magnitude",
+    "verticality",
+    "horizontality",
+    "slope_angle_rad",
+    "roughness_proxy",
+    "eigenvalue_0",
+    "eigenvalue_1",
+    "eigenvalue_2",
+    "pca_linearity",
+    "pca_flatness",
+    "pca_roughness",
+    "pca_curvature",
+    "aabb_flatness",
+    "aabb_linearity",
+    "aabb_anisotropy",
+    "xy_area",
+    "z_extent"
+  ],
+  "include_identifiers": false,
+  "n_estimators": 300,
+  "random_state": 42,
+  "validation_metrics": {
+    "label_accuracy": 0.9738839963559065,
+    "classification_report": {
+      "free": {
+        "precision": 0.962852897473997,
+        "recall": 0.9795918367346939,
+        "f1-score": 0.9711502435369052,
+        "support": 1323.0
+      },
+      "obstacle": {
+        "precision": 0.9838530066815144,
+        "recall": 0.9735537190082645,
+        "f1-score": 0.9786762669620603,
+        "support": 1815.0
+      },
+      "stair": {
+        "precision": 0.9536423841059603,
+        "recall": 0.9290322580645162,
+        "f1-score": 0.9411764705882353,
+        "support": 155.0
+      },
+      "accuracy": 0.9738839963559065,
+      "macro avg": {
+        "precision": 0.9667827627538239,
+        "recall": 0.960725937935825,
+        "f1-score": 0.9636676603624004,
+        "support": 3293.0
+      },
+      "weighted avg": {
+        "precision": 0.9739939751052142,
+        "recall": 0.9738839963559065,
+        "f1-score": 0.973887503697735,
+        "support": 3293.0
+      }
+    },
+    "confusion_matrix_labels": [
+      0,
+      1,
+      2
+    ],
+    "confusion_matrix": [
+      [
+        1296,
+        21,
+        6
+      ],
+      [
+        47,
+        1767,
+        1
+      ],
+      [
+        3,
+        8,
+        144
+      ]
+    ],
+    "obstacle_probability_mae": 0.025825123499077316,
+    "obstacle_probability_rmse": 0.10159180212231442,
+    "obstacle_probability_r2": 0.9451632170693751
+  },
+  "prediction_reports": [
+    {
+      "input": "data/leaf_features.csv",
+      "output": "data/predicted_leaf_features.csv",
+      "rows": 16357,
+      "skipped_predictions": 0,
+      "ground_truth_rows": 16357,
+      "metrics": {
+        "label_accuracy": 0.9413706669927249,
+        "classification_report": {
+          "free": {
+            "precision": 0.922794617371211,
+            "recall": 0.9916739702015775,
+            "f1-score": 0.955995212279096,
+            "support": 6846.0
+          },
+          "obstacle": {
+            "precision": 0.9602960178550453,
+            "recall": 0.9441044000461947,
+            "f1-score": 0.9521313766596785,
+            "support": 8659.0
+          },
+          "stair": {
+            "precision": 0.891170431211499,
+            "recall": 0.5093896713615024,
+            "f1-score": 0.6482449589245706,
+            "support": 852.0
+          },
+          "accuracy": 0.9413706669927249,
+          "macro avg": {
+            "precision": 0.924753688812585,
+            "recall": 0.8150560138697581,
+            "f1-score": 0.8521238492877816,
+            "support": 16357.0
+          },
+          "weighted avg": {
+            "precision": 0.9409997173395088,
+            "recall": 0.9413706669927249,
+            "f1-score": 0.9379197602716013,
+            "support": 16357.0
+          }
+        },
+        "confusion_matrix_labels": [
+          0,
+          1,
+          2
+        ],
+        "confusion_matrix": [
+          [
+            6789,
+            47,
+            10
+          ],
+          [
+            441,
+            8175,
+            43
+          ],
+          [
+            127,
+            291,
+            434
+          ]
+        ],
+        "obstacle_probability_mae": 0.054800120126210446,
+        "obstacle_probability_rmse": 0.1544582826063185,
+        "obstacle_probability_r2": 0.8741827618137811
+      }
+    }
+  ],
+  "top_label_features": [
+    {
+      "feature": "center_y",
+      "importance": 0.07083951161096069
+    },
+    {
+      "feature": "max_y",
+      "importance": 0.06898631053596076
+    },
+    {
+      "feature": "min_y",
+      "importance": 0.06056598914115356
+    },
+    {
+      "feature": "center_z",
+      "importance": 0.05268468651924097
+    },
+    {
+      "feature": "story_local_z",
+      "importance": 0.05065429075759001
+    },
+    {
+      "feature": "min_z",
+      "importance": 0.04974844949705759
+    },
+    {
+      "feature": "center_x",
+      "importance": 0.049339887030995885
+    },
+    {
+      "feature": "relative_distance_to_ceiling",
+      "importance": 0.04814524833395729
+    },
+    {
+      "feature": "min_x",
+      "importance": 0.04780276627209451
+    },
+    {
+      "feature": "max_x",
+      "importance": 0.04662211727421186
+    },
+    {
+      "feature": "relative_height_from_floor",
+      "importance": 0.04523781587379492
+    },
+    {
+      "feature": "density",
+      "importance": 0.03990613819408469
+    },
+    {
+      "feature": "height_ratio",
+      "importance": 0.03984912973305127
+    },
+    {
+      "feature": "max_z",
+      "importance": 0.03558622672906042
+    },
+    {
+      "feature": "log_density",
+      "importance": 0.033255241864201084
+    }
+  ],
+  "top_probability_features": [
+    {
+      "feature": "height_ratio",
+      "importance": 0.13207527495235238
+    },
+    {
+      "feature": "story_local_z",
+      "importance": 0.1311205917502526
+    },
+    {
+      "feature": "density",
+      "importance": 0.12465125104750058
+    },
+    {
+      "feature": "relative_height_from_floor",
+      "importance": 0.12433715758465527
+    },
+    {
+      "feature": "surface_density",
+      "importance": 0.1182178029160531
+    },
+    {
+      "feature": "relative_distance_to_ceiling",
+      "importance": 0.114260430294097
+    },
+    {
+      "feature": "log_density",
+      "importance": 0.06305401837880514
+    },
+    {
+      "feature": "voxel_size",
+      "importance": 0.024910974942173085
+    },
+    {
+      "feature": "min_x",
+      "importance": 0.022122351372765147
+    },
+    {
+      "feature": "center_x",
+      "importance": 0.020895492844074912
+    },
+    {
+      "feature": "max_x",
+      "importance": 0.016674263165326813
+    },
+    {
+      "feature": "center_z",
+      "importance": 0.015277409238047986
+    },
+    {
+      "feature": "max_z",
+      "importance": 0.014396587871341186
+    },
+    {
+      "feature": "min_z",
+      "importance": 0.01187758184849302
+    },
+    {
+      "feature": "center_y",
+      "importance": 0.011862523378907528
+    }
+  ]
+}

@@ -657,6 +657,65 @@ data/leaf_features_frame000001.csv -> data/train_leaf_features_frame000001.csv
 
 如果原本檔名已經是 `train_` 開頭，exporter 不會重複加前綴。
 
+## 9. Random Forest 模型訓練
+
+訓練腳本位於：
+
+```text
+python/train_model.py
+```
+
+預設會讀取 `data/` 中所有檔名符合 `train_*.csv` 的訓練資料，並訓練兩個 Random Forest：
+
+- `RandomForestClassifier`：預測 `label`，其中 `0=free`、`1=obstacle`、`2=stair`。
+- `RandomForestRegressor`：預測 `obstacle_probability`。
+
+建議使用專案 venv 執行：
+
+```bash
+venv/bin/python3 python/train_model.py
+```
+
+預設輸出：
+
+```text
+models/random_forest_voxel_model.pkl
+models/random_forest_voxel_report.json
+```
+
+同時，若 `data/` 中有非訓練資料，例如 `data/leaf_features.csv`，腳本會自動略過 `train_*.csv` 與 `predicted_*.csv`，將這些一般 feature CSV 進行預測，並輸出成：
+
+```text
+data/predicted_leaf_features.csv
+```
+
+若系統 Python 缺少套件，請安裝或改用已有 `scikit-learn` 的 venv：
+
+```bash
+python3 -m pip install numpy scikit-learn
+```
+
+訓練腳本會自動檢查資料是否足夠。若沒有找到 `train_*.csv`、缺少 `label` / `obstacle_probability` 欄位、只有單一 label class，或某些 class 樣本數過少，會停止並印出原因。
+
+若想指定某一份 predict CSV 或指定輸出位置，也可以手動傳參數：
+
+```bash
+venv/bin/python3 python/train_model.py \
+  --predict data/leaf_features.csv \
+  --prediction-output data/predicted_leaf_features.csv
+```
+
+預測輸出會保留原 CSV 欄位，並額外加入：
+
+- `predicted_label`
+- `predicted_obstacle_probability`
+
+若只想訓練模型、不自動預測任何 CSV，可以加上：
+
+```bash
+venv/bin/python3 python/train_model.py --no-auto-predict
+```
+
 ### CSV 欄位重點
 
 每一列代表一個 Octree leaf voxel。主要特徵包含：
@@ -689,7 +748,7 @@ FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 
 這些標籤適合拿來 bootstrap 或人工校正，不建議直接視為最終 ground truth。
 
-## 9. 畫面顏色與意義
+## 10. 畫面顏色與意義
 
 目前 `scripts/run_visualization.sh` 預設使用 probability color mode：
 
@@ -709,7 +768,7 @@ FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 
 PCL 的 point size 是螢幕像素大小，不是真實世界尺寸。因此要看 voxel 實際體積，請使用 `--voxel-mode boxes` 或 `--voxel-mode center-boxes`。
 
-## 10. 效能調整建議
+## 11. 效能調整建議
 
 如果 Gazebo 或 viewer 很卡，依序調整：
 
@@ -739,7 +798,7 @@ OCTREE_REBUILD_HZ=0.5 \
 ./scripts/run_visualization.sh octree
 ```
 
-## 11. 常見問題
+## 12. 常見問題
 
 ### 看不到 `/world/dynamic_cloud`
 
