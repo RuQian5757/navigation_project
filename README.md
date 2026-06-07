@@ -10,7 +10,7 @@
 - Headless feature exporter 輸出 leaf voxel CSV 給 Random Forest 訓練
 - PCLVisualizer 即時顯示 Octree voxel 切割結果
 - Gazebo topic 內已包含 rule-based semantic label、obstacle probability 與 entity id
-- 後續可接訓練好的 ML 模型、room id 自動標記與 A* / Hybrid A* planner
+- Random Forest `.rf.txt` 模型可接回 Octree，產生 RF predicted leaf label 與 obstacle probability
 
 完整流程與參數說明請看：
 
@@ -232,6 +232,8 @@ Viewer 參數：
 - `--probability-color`：依 `obstacle_probability` 上色，越接近 1 越醒目。
 - `--label-color`：用語義 label 上色，而不是 Octree depth。
 - `--rf-model`：載入 `python/train_model.py` 產生的 `.rf.txt`，在建構 Octree leaf 後用模型覆寫 `label` 與 `obstacle_probability`。
+- `OCTREE_WINDOW_TITLE`：透過腳本設定 viewer 視窗標題，方便 ideal / RF 視窗並排比較。
+- `OCTREE_RF_MODEL`：`run_visualization_rf.sh` 使用的 RF model 路徑，預設 `models/random_forest_voxel_model.rf.txt`。
 
 Stair / cross-floor voxel 在所有 color mode 下都會優先顯示為亮紫紅色，避免樓梯因低 obstacle probability 而不明顯。
 
@@ -252,6 +254,8 @@ Feature exporter 參數：
 - `--ceiling-offset`：每層樓內天花板局部 z offset，腳本預設 `4`。
 - `--once`：收到第一包點雲後輸出一次就結束。
 - `--timestamped`：每次輸出成獨立檔案，不覆蓋前一份 CSV。
+- `PREDICT_FEATURE_*`：`run_feature_export_predict.sh` 的輸出、頻率與抽樣參數。
+- `RF_FEATURE_*`：`run_feature_export_rf.sh` 的模型、輸出、頻率與抽樣參數。
 
 一般操作建議優先改 [scripts/run_visualization.sh](scripts/run_visualization.sh) 上方的參數設定區，或用環境變數覆寫，例如：
 
@@ -276,10 +280,11 @@ FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 - Gazebo semantic point fields：`label`、`obstacle_probability`、`entity_id`
 - 樓梯 voxel 高亮與 cross-floor flag
 - Random Forest 訓練腳本 `python/train_model.py`
+- C++ Random Forest predictor 與 RF predicted Octree viewer
+- predict / RF CSV 輸出腳本
 
 後續可擴充：
 
-- 將 ML 模型輸出接到 `PointCloudSample` / `MLResult`
 - 自動 room id 標記
 - 3D A* 或 Hybrid A* path planner
 - 將 planner cost 與 `computeTraversalInfo()` 串接

@@ -5,27 +5,44 @@
 - Gazebo plugin 如何產生點雲
 - 點雲資料如何透過 Gazebo Transport 傳遞
 - Octree 如何接收並切割資料
-- 如何輸出 Random Forest 訓練用 leaf feature CSV
-- 如何執行即時 3D Octree 視覺化
+- 如何輸出 Random Forest 訓練 / 評估 / RF 推論 CSV
+- 如何執行 Gazebo semantic 與 RF predicted 即時 3D Octree 視覺化
 - 常用參數要如何調整
 
-目前主要資料流分成「訓練資料輸出」與「視覺化展示」兩條，兩者都訂閱同一個 Gazebo topic，互不依賴：
+目前所有資料都從 Gazebo topic `/world/dynamic_cloud` 出發。CSV 輸出與 3D viewer 是平行管線，viewer 不會讀 CSV；它會直接訂閱 topic、即時建 Octree，再決定使用 Gazebo semantic 或 RF model 產生 leaf label。
 
 ```text
 warehouse_world.sdf
   -> DynamicWorldCloud Gazebo system plugin
   -> /world/dynamic_cloud, gz::msgs::PointCloudPacked
 
-訓練資料管線:
+訓練 CSV 管線:
+  -> src/gazebo_leaf_feature_exporter.cpp
+  -> OctreeManager
+  -> leaf_feature_exporter
+  -> data/train_leaf_features.csv
+
+模型評估 predict CSV 管線:
   -> src/gazebo_leaf_feature_exporter.cpp
   -> OctreeManager
   -> leaf_feature_exporter
   -> data/leaf_features.csv
 
-視覺化管線:
+RF 推論 CSV 管線:
+  -> src/gazebo_leaf_feature_exporter.cpp
+  -> OctreeManager + RandomForestVoxelPredictor
+  -> leaf_feature_exporter
+  -> data/predicted_rf_leaf_features.csv
+
+理想 3D Octree 視覺化:
   -> scripts/visualize_octree_gazebo.cpp
   -> OctreeManager
-  -> PCLVisualizer 即時顯示 Octree voxel
+  -> PCLVisualizer 顯示 Gazebo semantic Octree
+
+RF 3D Octree 視覺化:
+  -> scripts/visualize_octree_gazebo.cpp
+  -> OctreeManager + RandomForestVoxelPredictor
+  -> PCLVisualizer 顯示 RF predicted Octree
 ```
 
 ## 1. 主要元件
@@ -89,6 +106,7 @@ warehouse_world.sdf
 - 若 topic 內有 semantic 欄位，直接填入 `label`、`obstacle_probability`、`entity_id`。
 - 使用 `OctreeManager::initialize(samples)` 建立當前 frame 的 Octree。
 - Octree 會把 leaf 內 semantic points 聚合成 leaf label 與 dominant entity。
+- 若透過 `--rf-model` 載入 `.rf.txt`，Octree leaf 在幾何特徵計算完成後會由 `RandomForestVoxelPredictor` 覆寫 `label` 與 `obstacle_probability`。
 - 呼叫 `exportOctreeLeafFeaturesToCSV(octree.nodes(), output_path)` 輸出 CSV。
 - 可以用固定檔名覆蓋輸出，也可以用 `--timestamped` 保留每一個 frame 的 CSV。
 - 若使用 `--train`，輸出檔名會加上 `train_` 前綴，方便區分訓練資料與未來要送模型預測的 feature CSV。
@@ -101,6 +119,7 @@ warehouse_world.sdf
 
 - `scripts/visualize_octree_gazebo.cpp`
 - `scripts/run_visualization.sh`
+- `scripts/run_visualization_rf.sh`
 - `scripts/CMakeLists.txt`
 
 功能：
@@ -109,6 +128,7 @@ warehouse_world.sdf
 - 解析 `gz::msgs::PointCloudPacked` 的 `xyz` float32 packed data，以及 `label`、`obstacle_probability`、`entity_id` semantic 欄位。
 - 依照設定節流解析頻率，避免 viewer 拖慢 Gazebo。
 - 使用收到的點雲建立 Octree。
+- 若使用 `--rf-model` 或 `scripts/run_visualization_rf.sh`，viewer 會在本 process 內套用 RF model，不會讀取 `predicted_rf_leaf_features.csv`。
 - 用 PCLVisualizer 顯示 Octree leaf voxel。
 - 可選擇顯示原始點雲、voxel center、voxel wireframe box。
 - 預設使用 probability color mode；stair / cross-floor voxel 在所有 color mode 下都會優先顯示為亮紫紅色。
@@ -122,6 +142,7 @@ warehouse_world.sdf
 功能：
 
 - 用同一個入口啟動 Octree 3D 顯示或 pointcloud 3D 顯示。
+- `octree` mode 顯示 Gazebo semantic Octree；`octree-rf` mode 顯示 RF predicted Octree。
 - 腳本上方集中放置常用參數，並用註解說明每個參數用途。
 - 支援用環境變數臨時覆寫參數，不需要直接修改 C++ 或 Python 程式。
 
@@ -285,7 +306,15 @@ DynamicWorldCloud::PublishPointCloud()
   -> cloud_pub_.Publish(msg)
   -> /world/dynamic_cloud
 
-訓練資料:
+訓練 CSV:
+  -> gazebo_leaf_feature_exporter.cpp callback
+  -> parsePointCloudPacked()
+  -> std::vector<navigation::PointCloudSample>
+  -> OctreeManager::initialize(samples)
+  -> exportOctreeLeafFeaturesToCSV()
+  -> data/train_leaf_features.csv
+
+模型評估 predict CSV:
   -> gazebo_leaf_feature_exporter.cpp callback
   -> parsePointCloudPacked()
   -> std::vector<navigation::PointCloudSample>
@@ -293,10 +322,27 @@ DynamicWorldCloud::PublishPointCloud()
   -> exportOctreeLeafFeaturesToCSV()
   -> data/leaf_features.csv
 
-視覺化:
+RF 推論 CSV:
+  -> gazebo_leaf_feature_exporter.cpp callback
+  -> parsePointCloudPacked()
+  -> std::vector<navigation::PointCloudSample>
+  -> OctreeManager::setMLPredictor(RandomForestVoxelPredictor)
+  -> OctreeManager::initialize(samples)
+  -> exportOctreeLeafFeaturesToCSV()
+  -> data/predicted_rf_leaf_features.csv
+
+理想 Octree 3D 視覺化:
   -> visualize_octree_gazebo.cpp callback
   -> parsePointCloudPacked()
   -> std::vector<navigation::PointCloudSample>
+  -> OctreeManager::initialize(samples)
+  -> PCLVisualizer
+
+RF Octree 3D 視覺化:
+  -> visualize_octree_gazebo.cpp callback
+  -> parsePointCloudPacked()
+  -> std::vector<navigation::PointCloudSample>
+  -> OctreeManager::setMLPredictor(RandomForestVoxelPredictor)
   -> OctreeManager::initialize(samples)
   -> PCLVisualizer
 ```
@@ -304,6 +350,8 @@ DynamicWorldCloud::PublishPointCloud()
 Viewer 會根據 `--max-render-points` 對收到的點雲再做一次抽樣，避免大量點雲造成 Octree 重建與 PCL rendering 過慢。
 
 Feature exporter 會根據 `--max-points` 對收到的點雲抽樣，避免訓練資料輸出拖慢 simulation。若點雲含 semantic 欄位，抽樣後仍會保留每個 sample 的 label、probability 與 entity id。
+
+注意：`data/predicted_rf_leaf_features.csv` 是 RF 結果的存檔快照，方便離線分析；即時 RF 3D viewer 不會讀這份 CSV，而是直接從 `/world/dynamic_cloud` 建 Octree 並即時推論。
 
 ## 5. 建置方式
 
@@ -357,7 +405,10 @@ build/octree_viewer/visualize_octree_gazebo
 
 ```bash
 chmod +x scripts/run_visualization.sh
+chmod +x scripts/run_visualization_rf.sh
 chmod +x scripts/run_feature_export.sh
+chmod +x scripts/run_feature_export_predict.sh
+chmod +x scripts/run_feature_export_rf.sh
 ```
 
 ## 6. 執行流程
@@ -366,6 +417,18 @@ chmod +x scripts/run_feature_export.sh
 
 ```bash
 ./scripts/run_gazebo.sh gazebo/maps/warehouse_world.sdf -s -r -v 2
+```
+
+若要開啟 predict map 進行模型評估或 RF 3D Octree 比較，改用：
+
+```bash
+./scripts/run_gazebo.sh gazebo/maps/warehouse_predict_world.sdf -s -r -v 2
+```
+
+兩個 world 都會透過 `DynamicWorldCloud` 發布同一個 topic：
+
+```text
+/world/dynamic_cloud
 ```
 
 `scripts/run_gazebo.sh` 會自動設定：
@@ -616,6 +679,25 @@ Stair / cross-floor voxel 在所有 color mode 下都會固定顯示為亮紫紅
 - `FEATURE_NEAR_FLOOR`：判斷接近地板的距離帶。
 - `FEATURE_NEAR_CEILING`：判斷接近天花板的距離帶。
 
+`scripts/run_feature_export_predict.sh` 專門輸出模型評估用 reference CSV，常用環境變數如下：
+
+- `PREDICT_FEATURE_OUTPUT`：輸出 CSV，預設 `data/leaf_features.csv`。
+- `PREDICT_FEATURE_ONCE`：設為 `1` 時只輸出第一包點雲。
+- `PREDICT_FEATURE_TIMESTAMPED`：設為 `1` 時每次輸出獨立 CSV。
+- `PREDICT_FEATURE_EXPORT_HZ`：每秒最多輸出幾次，預設 `1`。
+- `PREDICT_FEATURE_MAX_DEPTH`：Octree 最大深度。
+- `PREDICT_FEATURE_MAX_POINTS`：每次最多使用多少收到的點。
+
+`scripts/run_feature_export_rf.sh` 專門輸出 RF 推論後的 CSV，常用環境變數如下：
+
+- `RF_FEATURE_MODEL`：C++ RF text model 路徑，預設 `models/random_forest_voxel_model.rf.txt`。
+- `RF_FEATURE_OUTPUT`：輸出 CSV，預設 `data/predicted_rf_leaf_features.csv`。
+- `RF_FEATURE_ONCE`：設為 `1` 時只輸出第一包點雲。
+- `RF_FEATURE_TIMESTAMPED`：設為 `1` 時每次輸出獨立 CSV。
+- `RF_FEATURE_EXPORT_HZ`：每秒最多輸出幾次，預設 `1`。
+- `RF_FEATURE_MAX_DEPTH`：Octree 最大深度。
+- `RF_FEATURE_MAX_POINTS`：每次最多使用多少收到的點。
+
 底層 `leaf_feature_exporter_gazebo` CLI 參數如下：
 
 `--partition`
@@ -656,7 +738,7 @@ Octree 最大深度。這會影響 leaf voxel 大小，也會影響輸出的訓�
 
 `--floor-surface-offset`
 
-每層樓內可通行地板面的局部 z offset。若你的座標系把每層地板面放在樓層起點，使用預設 `0`；若地板模型厚度 1m 且可通行面在樓層起點上方 1m，可設為 `1`。
+每層樓內可通行地板面的局部 z offset。腳本與目前 C++ 預設是 `1`，對應「地板厚度 1m、可通行面在樓層起點上方 1m」的地圖設定。若你的座標系把每層地板面直接放在樓層起點，可改成 `0`。
 
 `--ceiling-offset`
 
@@ -791,10 +873,16 @@ RF_FEATURE_OUTPUT=data/predicted_custom_leaf_features.csv \
 Octree 3D viewer 啟用方式：
 
 ```bash
-OCTREE_RF_MODEL=models/random_forest_voxel_model.rf.txt ./scripts/run_visualization.sh octree
+./scripts/run_visualization_rf.sh
 ```
 
 這時 viewer 的 probability / label 顏色會反映模型推論後的 leaf 狀態。
+
+如果要手動指定模型：
+
+```bash
+OCTREE_RF_MODEL=models/random_forest_voxel_model.rf.txt ./scripts/run_visualization_rf.sh
+```
 
 底層 binary 也可以直接指定：
 

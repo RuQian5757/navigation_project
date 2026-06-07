@@ -67,7 +67,7 @@ Octree 建構時，每個 leaf 會保留該 leaf 內部點集合的幾何統計�
 
 因此 RF 不再只看到 voxel 的位置與密度，也能看到 voxel 內部點分布是平面、線狀、雜亂障礙，或可能的樓梯斜面。
 
-這些特徵會被 `src/leaf_feature_exporter.cpp` 輸出到 CSV。Gazebo simulation 執行時，推薦使用 `src/gazebo_leaf_feature_exporter.cpp` 或 `scripts/run_feature_export.sh` 直接訂閱 `/world/dynamic_cloud`，由 exporter 建立當前 frame 的 Octree 並輸出 CSV。Octree 3D viewer 只負責展示，不負責產生訓練資料。
+這些特徵會被 `src/leaf_feature_exporter.cpp` 輸出到 CSV。Gazebo simulation 執行時，`src/gazebo_leaf_feature_exporter.cpp` 會直接訂閱 `/world/dynamic_cloud`，由 exporter 建立當前 frame 的 Octree 並輸出 CSV。日常腳本分成三種用途：`run_feature_export.sh` 產生訓練/弱標註或自訂輸出，`run_feature_export_predict.sh` 產生模型評估用 reference CSV，`run_feature_export_rf.sh` 產生 RF predicted CSV。Octree 3D viewer 則直接訂閱同一個 topic 即時顯示；`run_visualization_rf.sh` 不讀 CSV，而是在 viewer 內建構 Octree 後套用 RF model。
 
 ### 動態更新與增量處理
 

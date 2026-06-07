@@ -112,6 +112,7 @@ print_usage() {
   cat <<'EOF'
 Usage:
   ./scripts/run_visualization.sh octree [extra octree viewer args...]
+  ./scripts/run_visualization.sh octree-rf [extra octree viewer args...]
   ./scripts/run_visualization.sh pointcloud [extra pointcloud viewer args...]
 
 Modes:
