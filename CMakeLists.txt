@@ -14,6 +14,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 add_library(navigation_octree STATIC
     src/octree_manager.cpp
     src/leaf_feature_exporter.cpp
+    src/random_forest_voxel_predictor.cpp
 )
 
 target_link_libraries(navigation_octree PRIVATE Threads::Threads)

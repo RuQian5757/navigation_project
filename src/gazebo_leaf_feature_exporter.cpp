@@ -1,5 +1,6 @@
 #include "leaf_feature_exporter.h"
 #include "octree_manager.h"
+#include "random_forest_voxel_predictor.h"
 
 #include <gz/msgs/pointcloud_packed.pb.h>
 #include <gz/transport/Node.hh>
@@ -16,6 +17,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -51,6 +53,7 @@ struct Options {
     bool timestamped = false;
     bool train = false;
     bool weak_labels = false;
+    std::string rf_model;
     navigation::FeatureExtractionConfig feature_extraction;
     navigation::WeakLabelingConfig weak_labeling;
 };
@@ -71,10 +74,11 @@ void printUsage(const char* program) {
         << "  --max-points N        Max received points used per export, default 120000\n"
         << "  --export-hz HZ        Max CSV export rate, default 1\n"
         << "  --weak-labels         Fill label/probability with rule-based weak labels\n"
+        << "  --rf-model FILE       Apply a C++ Random Forest text model to leaf labels\n"
         << "  --floor-z Z           Story-0 origin height, default 0\n"
         << "  --story-height H      Repeated floor-to-floor height, default 4\n"
-        << "  --floor-surface-offset Z Local walkable floor surface offset, default 0\n"
-        << "  --ceiling-offset Z    Local ceiling offset in each story, default 3\n"
+        << "  --floor-surface-offset Z Local walkable floor surface offset, default 1\n"
+        << "  --ceiling-offset Z    Local ceiling offset in each story, default 4\n"
         << "  --near-floor Z        Near-floor distance band, default 0.4\n"
         << "  --near-ceiling Z      Near-ceiling distance band, default 0.4\n"
         << "  --ceiling-z Z         Alias for --ceiling-offset\n"
@@ -107,6 +111,8 @@ ParseResult parseArgs(int argc, char** argv, Options& options) {
             options.export_hz = std::max(0.05, std::stod(argv[++i]));
         } else if (arg == "--weak-labels") {
             options.weak_labels = true;
+        } else if (arg == "--rf-model" && i + 1 < argc) {
+            options.rf_model = argv[++i];
         } else if (arg == "--floor-z" && i + 1 < argc) {
             const float value = static_cast<float>(std::stod(argv[++i]));
             options.feature_extraction.floor_z = value;
@@ -304,6 +310,19 @@ void ensureParentDirectory(const std::string& output) {
     }
 }
 
+navigation::RandomForestFeatureConfig toRandomForestFeatureConfig(
+    const navigation::FeatureExtractionConfig& config) {
+    navigation::RandomForestFeatureConfig rf_config;
+    rf_config.floor_z = config.floor_z;
+    rf_config.story_height = config.story_height;
+    rf_config.floor_surface_offset = config.floor_surface_offset;
+    rf_config.ceiling_offset = config.ceiling_offset;
+    rf_config.near_floor_z = config.near_floor_z;
+    rf_config.near_ceiling_z = config.near_ceiling_z;
+    rf_config.epsilon = config.epsilon;
+    return rf_config;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -319,6 +338,17 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, onSignal);
     setenv("GZ_PARTITION", options.partition.c_str(), 1);
     ensureParentDirectory(options.output);
+
+    std::shared_ptr<navigation::RandomForestVoxelPredictor> rf_predictor;
+    if (!options.rf_model.empty()) {
+        rf_predictor = std::make_shared<navigation::RandomForestVoxelPredictor>(
+            toRandomForestFeatureConfig(options.feature_extraction));
+        rf_predictor->loadFromTextModel(options.rf_model);
+        std::cout << "[leaf_feature_exporter] loaded RF model '" << options.rf_model
+                  << "' classifier_trees=" << rf_predictor->classifierTreeCount()
+                  << " regressor_trees=" << rf_predictor->regressorTreeCount()
+                  << " features=" << rf_predictor->featureNames().size() << "\n";
+    }
 
     std::atomic_bool busy{false};
     std::atomic_bool exported_once{false};
@@ -361,6 +391,9 @@ int main(int argc, char** argv) {
                 navigation::OctreeConfig config;
                 config.max_depth = options.max_depth;
                 navigation::OctreeManager octree(config);
+                if (rf_predictor) {
+                    octree.setMLPredictor(rf_predictor->asMLPredictor());
+                }
                 octree.initialize(parsed.samples);
 
                 const std::uint64_t frame = ++frame_counter;
@@ -404,7 +437,8 @@ int main(int argc, char** argv) {
               << "' partition='" << options.partition
               << "' output='" << options.output
               << "' train=" << (options.train ? "true" : "false")
-              << " weak_labels=" << (options.weak_labels ? "true" : "false") << "\n";
+              << " weak_labels=" << (options.weak_labels ? "true" : "false")
+              << " rf_model=" << (options.rf_model.empty() ? "none" : options.rf_model) << "\n";
 
     while (g_running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));

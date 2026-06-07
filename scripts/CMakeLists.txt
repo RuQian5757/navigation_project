@@ -14,6 +14,7 @@ find_package(gz-msgs10 REQUIRED)
 add_executable(visualize_octree_gazebo
   visualize_octree_gazebo.cpp
   "${PROJECT_ROOT}/src/octree_manager.cpp"
+  "${PROJECT_ROOT}/src/random_forest_voxel_predictor.cpp"
 )
 
 target_include_directories(visualize_octree_gazebo PRIVATE

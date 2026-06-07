@@ -171,6 +171,7 @@ void OctreeManager::initialize(const std::vector<PointCloudSample>& samples) {
         }
     }
     applyMLToLeaves(leaves);
+    refreshAllNeighborLinks();
 }
 
 void OctreeManager::updateFromPointCloud(const std::vector<Point3D>& updated_points) {
@@ -192,9 +193,7 @@ void OctreeManager::updateFromPointCloud(const std::vector<PointCloudSample>& up
     }
 
     if (outside_root) {
-        buildLinearOctree(updated_samples);
-        rebuildLeafIndex();
-        refreshAllNeighborLinks();
+        initialize(updated_samples);
         return;
     }
 

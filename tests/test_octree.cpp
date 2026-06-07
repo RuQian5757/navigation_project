@@ -205,7 +205,11 @@ void testWeakLabelExport() {
     obstacle_leaf.avg_normal[2] = 0.0f;
 
     std::vector<LeafNode> leaves{free_leaf, obstacle_leaf};
-    assignWeakLabels(leaves);
+    WeakLabelingConfig config;
+    config.floor_surface_offset = 0.0f;
+    config.ceiling_offset = 3.0f;
+    config.ceiling_z = 3.0f;
+    assignWeakLabels(leaves, config);
 
     assert(leaves[0].label == static_cast<int>(VoxelLabel::Free));
     assert(leaves[0].obstacle_probability < 0.2f);

@@ -1,11 +1,13 @@
 {
-  "trained_at": "2026-06-07T08:13:34.220785+00:00",
+  "trained_at": "2026-06-07T08:24:09.896847+00:00",
   "train_files": [
     "data/train_leaf_features.csv"
   ],
   "prediction_files": [
     "data/leaf_features.csv"
   ],
+  "model_output": "models/random_forest_voxel_model.pkl",
+  "cpp_model_output": "models/random_forest_voxel_model.rf.txt",
   "rows_total": 16463,
   "rows_train": 13170,
   "rows_test": 3293,
@@ -124,8 +126,8 @@
         144
       ]
     ],
-    "obstacle_probability_mae": 0.025825123499077316,
-    "obstacle_probability_rmse": 0.10159180212231442,
+    "obstacle_probability_mae": 0.025825123499077313,
+    "obstacle_probability_rmse": 0.10159180212231443,
     "obstacle_probability_r2": 0.9451632170693751
   },
   "prediction_reports": [

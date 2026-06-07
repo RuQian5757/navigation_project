@@ -31,20 +31,20 @@ struct LeafNode {
 struct FeatureExtractionConfig {
     float floor_z = 0.0f;
     float story_height = 4.0f;
-    float floor_surface_offset = 0.0f;
-    float ceiling_offset = 3.0f;
+    float floor_surface_offset = 1.0f;
+    float ceiling_offset = 4.0f;
     float near_floor_z = 0.4f;
     float near_ceiling_z = 0.4f;
-    float ceiling_z = 3.0f;
+    float ceiling_z = 4.0f;
     float epsilon = 1e-6f;
 };
 
 struct WeakLabelingConfig {
     float floor_z = 0.0f;
     float story_height = 4.0f;
-    float floor_surface_offset = 0.0f;
-    float ceiling_offset = 3.0f;
-    float ceiling_z = 3.0f;
+    float floor_surface_offset = 1.0f;
+    float ceiling_offset = 4.0f;
+    float ceiling_z = 4.0f;
     float floor_band = 0.35f;
     float free_max_slope_rad = 0.30f;
     float stair_min_slope_rad = 0.25f;

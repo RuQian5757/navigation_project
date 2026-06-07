@@ -1,4 +1,5 @@
 #include "octree_manager.h"
+#include "random_forest_voxel_predictor.h"
 
 #include <gz/msgs/pointcloud_packed.pb.h>
 #include <gz/transport/Node.hh>
@@ -16,6 +17,7 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -48,6 +50,7 @@ struct Options {
     bool show_voxels = true;
     ColorMode color_mode = ColorMode::Probability;
     VoxelMode voxel_mode = VoxelMode::Centers;
+    std::string rf_model;
 };
 
 struct LatestCloud {
@@ -75,6 +78,7 @@ void printUsage(const char* program) {
         << "  --label-color         Color voxels by ML/navigation label instead of depth\n"
         << "  --probability-color   Color voxels by obstacle probability\n"
         << "  --color-mode MODE     depth, label, or probability; default probability\n"
+        << "  --rf-model FILE       Apply a C++ Random Forest text model before rendering\n"
         << "  --help                Show this message\n\n"
         << "Build:\n"
         << "  cmake -S scripts -B build/octree_viewer\n"
@@ -132,6 +136,8 @@ bool parseArgs(int argc, char** argv, Options& options) {
                 std::cerr << "Unknown color mode: " << mode << "\n";
                 return false;
             }
+        } else if (arg == "--rf-model" && i + 1 < argc) {
+            options.rf_model = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
             printUsage(argv[0]);
             return false;
@@ -563,6 +569,16 @@ int main(int argc, char** argv) {
 
     setenv("GZ_PARTITION", options.partition.c_str(), 1);
 
+    std::shared_ptr<navigation::RandomForestVoxelPredictor> rf_predictor;
+    if (!options.rf_model.empty()) {
+        rf_predictor = std::make_shared<navigation::RandomForestVoxelPredictor>();
+        rf_predictor->loadFromTextModel(options.rf_model);
+        std::cout << "Loaded RF model " << options.rf_model
+                  << " classifier_trees=" << rf_predictor->classifierTreeCount()
+                  << " regressor_trees=" << rf_predictor->regressorTreeCount()
+                  << " features=" << rf_predictor->featureNames().size() << "\n";
+    }
+
     LatestCloud latest;
     std::atomic_bool running{true};
     std::atomic<std::int64_t> last_parse_ns{0};
@@ -644,6 +660,9 @@ int main(int argc, char** argv) {
         if (!samples.empty() && frame != rendered_frame &&
             now - last_rebuild >= rebuild_period) {
             navigation::OctreeManager octree(config);
+            if (rf_predictor) {
+                octree.setMLPredictor(rf_predictor->asMLPredictor());
+            }
             octree.initialize(samples);
 
             if (options.show_points) {

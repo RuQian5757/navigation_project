@@ -29,6 +29,7 @@ LABEL_COLUMN = "label"
 PROBABILITY_COLUMN = "obstacle_probability"
 DEFAULT_MODEL_OUTPUT = Path("models/random_forest_voxel_model.pkl")
 DEFAULT_REPORT_OUTPUT = Path("models/random_forest_voxel_report.json")
+DEFAULT_CPP_MODEL_OUTPUT = Path("models/random_forest_voxel_model.rf.txt")
 
 # Identifiers are useful for tracing a leaf back to Gazebo / Octree, but they
 # can make the model memorize a map instead of learning geometric semantics.
@@ -119,6 +120,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_REPORT_OUTPUT,
         type=Path,
         help=f"Output JSON report path, default {DEFAULT_REPORT_OUTPUT}.",
+    )
+    parser.add_argument(
+        "--cpp-model-output",
+        default=DEFAULT_CPP_MODEL_OUTPUT,
+        type=Path,
+        help=f"Output C++ readable Random Forest text model, default {DEFAULT_CPP_MODEL_OUTPUT}.",
     )
     parser.add_argument(
         "--test-size",
@@ -443,6 +450,63 @@ def feature_importances(
     ]
 
 
+def export_cpp_forest_model(
+    classifier: RandomForestClassifier,
+    regressor: RandomForestRegressor,
+    feature_columns: list[str],
+    output_path: Path,
+) -> None:
+    """Export sklearn forests to a small line-based format for C++17 inference."""
+    class_index_by_label = {
+        int(label): index for index, label in enumerate(classifier.classes_)
+    }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write("RFVOXEL_TEXT 1\n")
+        handle.write(f"FEATURE_COUNT {len(feature_columns)}\n")
+        for feature in feature_columns:
+            handle.write(f"FEATURE {feature}\n")
+
+        handle.write("CLASS_COUNT 3\n")
+        handle.write("CLASSES 0 1 2\n")
+        handle.write(f"CLASSIFIER_TREES {len(classifier.estimators_)}\n")
+        for estimator in classifier.estimators_:
+            tree = estimator.tree_
+            handle.write(f"TREE {tree.node_count}\n")
+            for node_index in range(tree.node_count):
+                values = [0.0, 0.0, 0.0]
+                raw_values = tree.value[node_index][0]
+                for label in (0, 1, 2):
+                    class_index = class_index_by_label.get(label)
+                    if class_index is not None:
+                        values[label] = float(raw_values[class_index])
+                handle.write(
+                    "NODE "
+                    f"{int(tree.children_left[node_index])} "
+                    f"{int(tree.children_right[node_index])} "
+                    f"{int(tree.feature[node_index])} "
+                    f"{float(tree.threshold[node_index]):.17g} "
+                    f"{values[0]:.17g} {values[1]:.17g} {values[2]:.17g}\n"
+                )
+
+        handle.write(f"REGRESSOR_TREES {len(regressor.estimators_)}\n")
+        for estimator in regressor.estimators_:
+            tree = estimator.tree_
+            handle.write(f"TREE {tree.node_count}\n")
+            for node_index in range(tree.node_count):
+                value = float(tree.value[node_index][0][0])
+                handle.write(
+                    "NODE "
+                    f"{int(tree.children_left[node_index])} "
+                    f"{int(tree.children_right[node_index])} "
+                    f"{int(tree.feature[node_index])} "
+                    f"{float(tree.threshold[node_index]):.17g} "
+                    f"{value:.17g}\n"
+                )
+        handle.write("END\n")
+
+
 def to_jsonable(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(k): to_jsonable(v) for k, v in value.items()}
@@ -668,6 +732,8 @@ def main() -> int:
             "trained_at": datetime.now(timezone.utc).isoformat(),
             "train_files": [str(path) for path in train_files],
             "prediction_files": [str(path) for path in prediction_files],
+            "model_output": str(args.model_output),
+            "cpp_model_output": str(args.cpp_model_output),
             "rows_total": int(x.shape[0]),
             "rows_train": int(x_train.shape[0]),
             "rows_test": int(x_test.shape[0]),
@@ -694,6 +760,12 @@ def main() -> int:
         args.model_output.parent.mkdir(parents=True, exist_ok=True)
         with args.model_output.open("wb") as handle:
             pickle.dump(bundle, handle)
+        export_cpp_forest_model(
+            final_classifier,
+            final_regressor,
+            feature_columns,
+            args.cpp_model_output,
+        )
         args.report_output.parent.mkdir(parents=True, exist_ok=True)
         args.report_output.write_text(
             json.dumps(to_jsonable(metadata), indent=2, ensure_ascii=False) + "\n",
@@ -709,6 +781,7 @@ def main() -> int:
         print(f"  obstacle_probability_mae: {metrics['obstacle_probability_mae']:.4f}")
         print(f"  obstacle_probability_rmse: {metrics['obstacle_probability_rmse']:.4f}")
         print(f"  model: {args.model_output}")
+        print(f"  cpp_model: {args.cpp_model_output}")
         print(f"  report: {args.report_output}")
         if prediction_reports:
             for report in prediction_reports:

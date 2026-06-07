@@ -23,9 +23,12 @@
 ```text
 include/octree_manager.h              Octree API 與資料結構
 include/leaf_feature_exporter.h       Leaf feature CSV export API
+include/random_forest_voxel_predictor.h C++ Random Forest 推論 API
 src/octree_manager.cpp                Octree 核心實作
 src/leaf_feature_exporter.cpp         Random Forest leaf feature 輸出
+src/random_forest_voxel_predictor.cpp C++ Random Forest text model 推論
 src/gazebo_leaf_feature_exporter.cpp  Gazebo topic -> Octree -> CSV
+python/train_model.py                 Random Forest 訓練與模型輸出
 tests/test_octree.cpp                 Octree 單元測試
 dynamic_world_cloud/                  Gazebo system plugin
 gazebo/maps/warehouse_world.sdf       測試用室內倉庫世界
@@ -33,7 +36,9 @@ scripts/visualize_octree_gazebo.cpp   即時 Gazebo Octree viewer
 scripts/visualize_pointcloud_realtime.py Python 即時點雲 viewer
 scripts/run_gazebo.sh                 Gazebo simulation 啟動腳本
 scripts/run_visualization.sh          Octree / pointcloud 共用啟動腳本
-scripts/run_feature_export.sh         Gazebo leaf feature CSV 輸出腳本
+scripts/run_feature_export.sh         Gazebo leaf feature CSV 共用底層腳本
+scripts/run_feature_export_predict.sh 產生模型評估用 predict feature CSV
+scripts/run_feature_export_rf.sh      產生 RF 已推論 feature CSV
 docs/                                 設計與操作文件
 ```
 
@@ -113,9 +118,27 @@ venv/bin/python3 python/train_model.py
 
 ```text
 models/random_forest_voxel_model.pkl
+models/random_forest_voxel_model.rf.txt
 models/random_forest_voxel_report.json
 data/predicted_leaf_features.csv
 ```
+
+將訓練好的模型套回 Octree 建構流程：
+
+```bash
+./scripts/run_feature_export_rf.sh
+OCTREE_RF_MODEL=models/random_forest_voxel_model.rf.txt ./scripts/run_visualization.sh octree
+```
+
+`.pkl` 主要給 Python 使用；`.rf.txt` 是 C++17 exporter / viewer / `OctreeManager::setMLPredictor()` 使用的輕量模型格式。
+
+若要產生一份給 `python/train_model.py` 評估 accuracy 的 predict feature CSV，使用：
+
+```bash
+./scripts/run_feature_export_predict.sh
+```
+
+這份資料的 `label` / `obstacle_probability` 仍來自 Gazebo semantic 欄位，供模型預測結果比對。
 
 如果畫面太卡，改用較輕量模式：
 
@@ -198,6 +221,7 @@ Viewer 參數：
 - `--color-mode`：`depth`、`label`、`probability`，預設由 `scripts/run_visualization.sh` 設為 `probability`。
 - `--probability-color`：依 `obstacle_probability` 上色，越接近 1 越醒目。
 - `--label-color`：用語義 label 上色，而不是 Octree depth。
+- `--rf-model`：載入 `python/train_model.py` 產生的 `.rf.txt`，在建構 Octree leaf 後用模型覆寫 `label` 與 `obstacle_probability`。
 
 Stair / cross-floor voxel 在所有 color mode 下都會優先顯示為亮紫紅色，避免樓梯因低 obstacle probability 而不明顯。
 
@@ -210,6 +234,7 @@ Feature exporter 參數：
 - `--max-points`：每次輸出最多使用多少收到的點。
 - `--export-hz`：每秒最多重建 Octree 並輸出 CSV 幾次。
 - `--weak-labels`：不用 Gazebo semantic 欄位，改用 exporter 端規則覆寫 `label` 與 `obstacle_probability`。
+- `--rf-model`：載入 `python/train_model.py` 產生的 `.rf.txt`，讓輸出 CSV 使用模型推論後的 leaf label 與 probability。
 - `--train`：輸出 CSV 檔名自動加上 `train_` 前綴，例如 `train_leaf_features.csv`。
 - `--floor-z`：第 0 層樓的 z 原點。
 - `--story-height`：樓層週期高度，預設 `4`。
@@ -223,7 +248,7 @@ Feature exporter 參數：
 ```bash
 OCTREE_MAX_VOXELS=1000 ./scripts/run_visualization.sh octree
 POINTCLOUD_POINT_SIZE=2 ./scripts/run_visualization.sh pointcloud
-FEATURE_EXPORT_HZ=0.5 FEATURE_TIMESTAMPED=1 ./scripts/run_feature_export.sh
+PREDICT_FEATURE_EXPORT_HZ=0.5 PREDICT_FEATURE_TIMESTAMPED=1 ./scripts/run_feature_export_predict.sh
 FEATURE_TRAIN=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 ```

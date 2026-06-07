@@ -116,15 +116,20 @@ Octree 建構時，每個 leaf 會保留該 leaf 內部點集合的幾何統計�
 - `src/main.cpp`：簡單執行範例。
 - `src/leaf_feature_exporter.cpp`：Leaf 特徵 CSV 輸出。
 - `src/gazebo_leaf_feature_exporter.cpp`：訂閱 Gazebo topic 並輸出 leaf feature CSV。
+- `include/random_forest_voxel_predictor.h`：C++ Random Forest leaf 推論 API。
+- `src/random_forest_voxel_predictor.cpp`：讀取 `.rf.txt` 並推論 `label` / `obstacle_probability`。
+- `python/train_model.py`：由 `data/train_*.csv` 訓練 Random Forest，並輸出 Python `.pkl` 與 C++ `.rf.txt`。
 - `tests/test_octree.cpp`：功能驗證測試。
 - `scripts/visualize_octree_gazebo.cpp`：訂閱 Gazebo `/world/dynamic_cloud` 的即時 Octree viewer。
-- `scripts/run_feature_export.sh`：Gazebo leaf feature CSV 輸出腳本。
+- `scripts/run_feature_export.sh`：Gazebo leaf feature CSV 共用底層腳本。
+- `scripts/run_feature_export_predict.sh`：輸出模型評估用 predict feature CSV。
+- `scripts/run_feature_export_rf.sh`：載入 RF 模型並輸出已推論 feature CSV。
 - `docs/project_workflow.md`：目前專案完整操作流程。
 
 ## 建議後續擴充
 
-1. 將 `python/train_model.py` 接上 `data/leaf_features.csv`。
-2. 加入 ONNX Runtime 與 Random Forest 標籤推理。
+1. 將 RF 推論結果接到正式導航節點的 A* / Hybrid A* cost map。
+2. 增加模型版本資訊與 feature schema 驗證，避免訓練與 C++ 推論欄位不一致。
 3. 實作 3D A* / Hybrid A* 路徑規劃。
 4. 增加跨深度 26 鄰居搜尋。
 5. 加入房間 ID 標記自動化與樓層區分。
