@@ -89,6 +89,7 @@ warehouse_world.sdf
 - Octree 會把 leaf 內 semantic points 聚合成 leaf label 與 dominant entity。
 - 呼叫 `exportOctreeLeafFeaturesToCSV(octree.nodes(), output_path)` 輸出 CSV。
 - 可以用固定檔名覆蓋輸出，也可以用 `--timestamped` 保留每一個 frame 的 CSV。
+- 若使用 `--train`，輸出檔名會加上 `train_` 前綴，方便區分訓練資料與未來要送模型預測的 feature CSV。
 
 這個 exporter 不開啟 PCLVisualizer，也不依賴 Octree 3D 顯示工具。這是目前推薦的資料產生方式，因為訓練資料輸出不應該被 rendering FPS 或視窗互動影響。
 
@@ -429,6 +430,12 @@ FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 FEATURE_TIMESTAMPED=1 FEATURE_EXPORT_HZ=1 ./scripts/run_feature_export.sh
 ```
 
+輸出訓練資料並在檔名前加上 `train_`：
+
+```bash
+FEATURE_TRAIN=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
+```
+
 降低負載：
 
 ```bash
@@ -558,6 +565,7 @@ Stair / cross-floor voxel 在所有 color mode 下都會固定顯示為亮紫紅
 - `FEATURE_EXPORT_HZ`：每秒最多重建 Octree 並輸出 CSV 幾次。
 - `FEATURE_ONCE`：設為 `1` 時只輸出第一包點雲。
 - `FEATURE_TIMESTAMPED`：設為 `1` 時每次輸出獨立 CSV。
+- `FEATURE_TRAIN`：設為 `1` 時輸出 CSV 檔名自動加上 `train_` 前綴。
 - `FEATURE_WEAK_LABELS`：設為 `1` 時用規則填入 `label` 與 `obstacle_probability`。
 - `FEATURE_FLOOR_Z`：第 0 層樓的 z 原點。
 - `FEATURE_STORY_HEIGHT`：樓層週期高度，預設 `4`。
@@ -637,6 +645,17 @@ leaf_features_frame000001.csv
 leaf_features_frame000002.csv
 ...
 ```
+
+`--train`
+
+在輸出 CSV 檔名前加上 `train_`，方便區分「訓練資料」與「待預測資料」。例如：
+
+```text
+data/leaf_features.csv -> data/train_leaf_features.csv
+data/leaf_features_frame000001.csv -> data/train_leaf_features_frame000001.csv
+```
+
+如果原本檔名已經是 `train_` 開頭，exporter 不會重複加前綴。
 
 ### CSV 欄位重點
 

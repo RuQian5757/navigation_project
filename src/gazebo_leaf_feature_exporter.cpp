@@ -49,6 +49,7 @@ struct Options {
     double export_hz = 1.0;
     bool once = false;
     bool timestamped = false;
+    bool train = false;
     bool weak_labels = false;
     navigation::FeatureExtractionConfig feature_extraction;
     navigation::WeakLabelingConfig weak_labeling;
@@ -79,6 +80,7 @@ void printUsage(const char* program) {
         << "  --ceiling-z Z         Alias for --ceiling-offset\n"
         << "  --once                Export the first received cloud and exit\n"
         << "  --timestamped         Write output_stem_frameNNNNNN.csv instead of overwriting\n"
+        << "  --train               Prefix output CSV filename with train_\n"
         << "  --help                Show this message\n";
 }
 
@@ -139,6 +141,8 @@ ParseResult parseArgs(int argc, char** argv, Options& options) {
             options.once = true;
         } else if (arg == "--timestamped") {
             options.timestamped = true;
+        } else if (arg == "--train") {
+            options.train = true;
         } else if (arg == "--help" || arg == "-h") {
             printUsage(argv[0]);
             return ParseResult::Help;
@@ -271,15 +275,22 @@ ParsedCloud parsePointCloudPacked(
     return parsed;
 }
 
-std::string outputPathForFrame(const std::string& output, std::uint64_t frame, bool timestamped) {
-    if (!timestamped) {
-        return output;
-    }
-
+std::string outputPathForFrame(const std::string& output,
+                               std::uint64_t frame,
+                               bool timestamped,
+                               bool train) {
     const std::filesystem::path base(output);
     const std::filesystem::path parent = base.parent_path();
-    const std::string stem = base.stem().string();
+    std::string stem = base.stem().string();
     const std::string ext = base.extension().empty() ? ".csv" : base.extension().string();
+
+    if (train && stem.rfind("train_", 0) != 0) {
+        stem = "train_" + stem;
+    }
+
+    if (!timestamped) {
+        return (parent / (stem + ext)).string();
+    }
 
     std::ostringstream filename;
     filename << stem << "_frame" << std::setw(6) << std::setfill('0') << frame << ext;
@@ -354,7 +365,7 @@ int main(int argc, char** argv) {
 
                 const std::uint64_t frame = ++frame_counter;
                 const std::string output_path =
-                    outputPathForFrame(options.output, frame, options.timestamped);
+                    outputPathForFrame(options.output, frame, options.timestamped, options.train);
                 ensureParentDirectory(output_path);
                 if (options.weak_labels) {
                     navigation::exportWeakLabeledOctreeLeafFeaturesToCSV(
@@ -392,7 +403,8 @@ int main(int argc, char** argv) {
     std::cout << "[leaf_feature_exporter] subscribed topic='" << options.topic
               << "' partition='" << options.partition
               << "' output='" << options.output
-              << "' weak_labels=" << (options.weak_labels ? "true" : "false") << "\n";
+              << "' train=" << (options.train ? "true" : "false")
+              << " weak_labels=" << (options.weak_labels ? "true" : "false") << "\n";
 
     while (g_running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));

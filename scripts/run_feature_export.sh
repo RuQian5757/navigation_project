@@ -62,6 +62,10 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Example: data/leaf_features_frame000001.csv
 : "${FEATURE_TIMESTAMPED:=0}"
 
+# Set to 1 to prefix the output CSV filename with train_.
+# Example: data/train_leaf_features.csv
+: "${FEATURE_TRAIN:=0}"
+
 # Set to 1 to fill label / obstacle_probability with simple rule-based weak labels.
 # This is useful for bootstrapping a training CSV before manual correction.
 : "${FEATURE_WEAK_LABELS:=0}"
@@ -91,6 +95,7 @@ Environment overrides:
   FEATURE_EXPORT_HZ       Max export frequency
   FEATURE_ONCE            1 exports first cloud and exits
   FEATURE_TIMESTAMPED     1 writes one CSV per exported frame
+  FEATURE_TRAIN           1 prefixes output CSV filename with train_
   FEATURE_WEAK_LABELS     1 fills labels with rule-based weak labels
   FEATURE_FLOOR_Z         Story-0 origin height
   FEATURE_STORY_HEIGHT    Repeated floor-to-floor height
@@ -141,6 +146,10 @@ fi
 
 if [ "${FEATURE_TIMESTAMPED}" = "1" ]; then
   args+=(--timestamped)
+fi
+
+if [ "${FEATURE_TRAIN}" = "1" ]; then
+  args+=(--train)
 fi
 
 if [ "${FEATURE_WEAK_LABELS}" = "1" ]; then

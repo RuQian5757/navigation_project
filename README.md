@@ -196,6 +196,7 @@ Feature exporter 參數：
 - `--max-points`：每次輸出最多使用多少收到的點。
 - `--export-hz`：每秒最多重建 Octree 並輸出 CSV 幾次。
 - `--weak-labels`：不用 Gazebo semantic 欄位，改用 exporter 端規則覆寫 `label` 與 `obstacle_probability`。
+- `--train`：輸出 CSV 檔名自動加上 `train_` 前綴，例如 `train_leaf_features.csv`。
 - `--floor-z`：第 0 層樓的 z 原點。
 - `--story-height`：樓層週期高度，預設 `4`。
 - `--floor-surface-offset`：每層樓內可通行地板面的局部 z offset。
@@ -209,6 +210,7 @@ Feature exporter 參數：
 OCTREE_MAX_VOXELS=1000 ./scripts/run_visualization.sh octree
 POINTCLOUD_POINT_SIZE=2 ./scripts/run_visualization.sh pointcloud
 FEATURE_EXPORT_HZ=0.5 FEATURE_TIMESTAMPED=1 ./scripts/run_feature_export.sh
+FEATURE_TRAIN=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 ```
 
