@@ -9,7 +9,8 @@
 - C++ `OctreeManager` 建立導航用 Linear Octree
 - Headless feature exporter 輸出 leaf voxel CSV 給 Random Forest 訓練
 - PCLVisualizer 即時顯示 Octree voxel 切割結果
-- 後續可接 ML label、room id、cross-floor edge、A* cost
+- Gazebo topic 內已包含 rule-based semantic label、obstacle probability 與 entity id
+- 後續可接訓練好的 ML 模型、room id 自動標記與 A* / Hybrid A* planner
 
 完整流程與參數說明請看：
 
@@ -125,7 +126,7 @@ OCTREE_REBUILD_HZ=0.5 \
 Plugin 會：
 
 1. 掃描 world 內的 collision geometry。
-2. 依照 `point_spacing` 取樣成 local point cloud。
+2. 依照 `point_spacing` 取樣成 local point cloud；mesh 會沿 triangle surface 取樣，不只取 vertices。
 3. 將 local cloud cache 起來。
 4. 在 `PostUpdate()` 依照 `update_rate` 轉成 world coordinates。
 5. 發布帶語義欄位的 `gz::msgs::PointCloudPacked` 到 `/world/dynamic_cloud`。
@@ -166,7 +167,7 @@ Gazebo plugin 參數在 [gazebo/maps/warehouse_world.sdf](gazebo/maps/warehouse_
 
 - `point_spacing`：collision 幾何取樣密度。
 - `update_rate`：點雲發布頻率。
-- `max_points_per_publish`：每次最多發布點數。
+- `max_points_per_publish`：每次最多發布點數，設為 `0` 代表不限制。
 - `transport_topic`：目前為 `/world/dynamic_cloud`。
 - `pcd_save_interval`：是否定期輸出 PCD。
 
@@ -180,9 +181,11 @@ Viewer 參數：
 - `--rebuild-hz`：每秒最多重建與刷新幾次。
 - `--voxel-mode`：`centers`、`boxes`、`hybrid`、`center-boxes`。
 - `--no-points`：不顯示原始白色點雲。
-- `--color-mode`：`depth`、`label`、`probability`。
-- `--probability-color`：依 `obstacle_probability` 上色，越接近 1 越醒目；樓梯固定為亮紫紅色。
+- `--color-mode`：`depth`、`label`、`probability`，預設由 `scripts/run_visualization.sh` 設為 `probability`。
+- `--probability-color`：依 `obstacle_probability` 上色，越接近 1 越醒目。
 - `--label-color`：用語義 label 上色，而不是 Octree depth。
+
+Stair / cross-floor voxel 在所有 color mode 下都會優先顯示為亮紫紅色，避免樓梯因低 obstacle probability 而不明顯。
 
 Feature exporter 參數：
 
@@ -196,7 +199,7 @@ Feature exporter 參數：
 - `--floor-z`：第 0 層樓的 z 原點。
 - `--story-height`：樓層週期高度，預設 `4`。
 - `--floor-surface-offset`：每層樓內可通行地板面的局部 z offset。
-- `--ceiling-offset`：每層樓內天花板局部 z offset，預設 `3`。
+- `--ceiling-offset`：每層樓內天花板局部 z offset，腳本預設 `4`。
 - `--once`：收到第一包點雲後輸出一次就結束。
 - `--timestamped`：每次輸出成獨立檔案，不覆蓋前一份 CSV。
 
@@ -219,12 +222,13 @@ FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 - Leaf PCA / avg_normal / Random Forest feature CSV export
 - Gazebo topic headless feature exporter
 - PCL 即時 Octree 視覺化
+- Gazebo semantic point fields：`label`、`obstacle_probability`、`entity_id`
+- 樓梯 voxel 高亮與 cross-floor flag
 
 後續可擴充：
 
 - 將 `python/train_model.py` 接上 `data/leaf_features.csv`
 - 將 ML 模型輸出接到 `PointCloudSample` / `MLResult`
 - 自動 room id 標記
-- 樓梯區域 semantic label 與 cross-floor edge
 - 3D A* 或 Hybrid A* path planner
 - 將 planner cost 與 `computeTraversalInfo()` 串接

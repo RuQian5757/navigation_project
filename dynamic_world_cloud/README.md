@@ -9,7 +9,7 @@ ground-truth point cloud from world collision geometry.
 - Traverses the world as Model -> Link -> Collision
 - Supports box, cylinder, sphere, mesh, and finite plane collision geometry
 - Samples each local collision cloud once, then only transforms cached points
-- Uses `gz::common::MeshManager` for mesh loading and vertex extraction
+- Uses `gz::common::MeshManager` for mesh loading and triangle-surface sampling
 - Publishes `gz::msgs::PointCloudPacked` on `/world/dynamic_cloud`
 - Publishes semantic fields per point: `label`, `obstacle_probability`, `entity_id`
 - Saves binary PCD snapshots every configured interval
@@ -51,9 +51,11 @@ source install/setup.bash
 
 ```xml
 <plugin filename="DynamicWorldCloud" name="DynamicWorldCloud">
-  <point_spacing>0.05</point_spacing>
-  <update_rate>10.0</update_rate>
-  <pcd_save_interval>5.0</pcd_save_interval>
+  <point_spacing>0.25</point_spacing>
+  <update_rate>10</update_rate>
+  <pcd_save_interval>0.0</pcd_save_interval>
+  <publish_enabled>true</publish_enabled>
+  <max_points_per_publish>50000</max_points_per_publish>
   <pcd_directory>./pcd</pcd_directory>
   <transport_topic>/world/dynamic_cloud</transport_topic>
 </plugin>
@@ -63,16 +65,19 @@ source install/setup.bash
 
 The published `PointCloudPacked` contains:
 
-- `x`, `y`, `z` as `FLOAT32`
+- `xyz` as packed `FLOAT32` coordinates
 - `label` as `UINT32`: `0=free`, `1=obstacle`, `2=stair`
 - `obstacle_probability` as `FLOAT32`
 - `entity_id` as `UINT32`
 
-Current label inference is name based:
+Current label inference is rule based:
 
-- scoped collision name containing `stair` -> stair
 - scoped collision name containing `floor` / `ground`, or plane geometry -> free
+- otherwise, scoped collision name containing `stair` -> stair
 - all other collision geometry -> obstacle
+
+Floor semantics intentionally take priority over stair semantics, so a floor
+model that describes stair access is not labeled as a stair surface.
 
 When launching from this repository without installation, use:
 

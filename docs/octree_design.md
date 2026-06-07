@@ -84,8 +84,9 @@ Octree 建構時，每個 leaf 會保留該 leaf 內部點集合的幾何統計�
 ### 高效鄰居查找
 
 - 建立 6 個正交鄰居索引：`POS_X`、`NEG_X`、`POS_Y`、`NEG_Y`、`POS_Z`、`NEG_Z`。
-- 26 鄰居支援可透過正交鄰居的 Backtracking 展開，進行更廣泛搜尋。
-- 使用 Morton code（Z-order）加速定位，並將節點儲存在連續向量中。
+- 鄰居查找會沿 voxel face 建立多個 probe point，再從 root 回查 containing leaf，因此可以處理相鄰 leaf 深度不一致的情況。
+- 目前尚未提供完整 26-neighbor API；若 planner 需要斜向鄰居，可在 6 方向鄰居基礎上擴充。
+- Morton code（Z-order）目前用於 leaf identity / CSV 對應與 linear octree 編碼；實際包含點查找仍以 root traversal 為主。
 
 ### 稀疏點與長形結構處理
 
@@ -125,5 +126,5 @@ Octree 建構時，每個 leaf 會保留該 leaf 內部點集合的幾何統計�
 1. 將 `python/train_model.py` 接上 `data/leaf_features.csv`。
 2. 加入 ONNX Runtime 與 Random Forest 標籤推理。
 3. 實作 3D A* / Hybrid A* 路徑規劃。
-4. 增加跨深度 26 鄰居 Backtracking 搜尋。
+4. 增加跨深度 26 鄰居搜尋。
 5. 加入房間 ID 標記自動化與樓層區分。

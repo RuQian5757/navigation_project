@@ -44,6 +44,7 @@ warehouse_world.sdf
 - 掃描 world 內所有 collision geometry。
 - 支援 box、cylinder、sphere、mesh、plane。
 - 對每個 collision 取樣成 local point cloud。
+- Mesh collision 會沿 triangle surface 依 `point_spacing` 取樣，不只使用 mesh vertices，因此自製 STL 牆面與樓梯也能產生足夠密度的點雲。
 - 將 local cloud cache 起來，避免每個 simulation tick 重新取樣。
 - 每次發布時只根據目前 entity pose 把 local points 轉成 world coordinates。
 - 將全世界點雲發布成 `gz::msgs::PointCloudPacked`。
@@ -102,11 +103,12 @@ warehouse_world.sdf
 功能：
 
 - 直接訂閱 Gazebo Transport topic `/world/dynamic_cloud`。
-- 解析 `gz::msgs::PointCloudPacked` 的 `xyz` float32 packed data。
+- 解析 `gz::msgs::PointCloudPacked` 的 `xyz` float32 packed data，以及 `label`、`obstacle_probability`、`entity_id` semantic 欄位。
 - 依照設定節流解析頻率，避免 viewer 拖慢 Gazebo。
 - 使用收到的點雲建立 Octree。
 - 用 PCLVisualizer 顯示 Octree leaf voxel。
 - 可選擇顯示原始點雲、voxel center、voxel wireframe box。
+- 預設使用 probability color mode；stair / cross-floor voxel 在所有 color mode 下都會優先顯示為亮紫紅色。
 
 ### 共用視覺化啟動腳本
 
@@ -179,7 +181,7 @@ warehouse_world.sdf
 
 `max_points_per_publish`
 
-限制每次 topic 發布的最大點數。若完整 cloud 大於此數量，plugin 會等距抽樣後發布。
+限制每次 topic 發布的最大點數。若完整 cloud 大於此數量，plugin 會等距抽樣後發布。設為 `0` 代表不限制發布點數。
 
 建議：
 
@@ -218,7 +220,7 @@ Plugin 會用 collision geometry 類型決定取樣方式：
 - Box：在表面用固定 spacing 取樣。
 - Cylinder：取樣側面與上下圓面。
 - Sphere：取樣球面。
-- Mesh：讀 mesh vertices。
+- Mesh：讀 mesh triangle index / vertices，沿 triangle surface 依 `point_spacing` 取樣；若 mesh 缺少 triangle index，才退回 sequential triangle 或 vertex fallback。
 - Plane：依有限平面大小取樣。
 
 每個 collision 的 local cloud 只建一次並 cache，後續不重複取樣。
@@ -248,8 +250,9 @@ gz::msgs::PointCloudPacked
 目前欄位格式是：
 
 ```text
-field: "x" / "y" / "z"
+field: "xyz"
 datatype: FLOAT32
+count: 3 floats at offset 0
 field: "label"
 datatype: UINT32
 field: "obstacle_probability"
@@ -263,9 +266,11 @@ frame: "world"
 
 `DynamicWorldCloud` 目前會根據 collision scoped name 與 geometry 做 semantic 推論：
 
-- 名稱包含 `stair`：`label=2`，代表樓梯。
 - 名稱包含 `floor` 或 `ground`，或 collision geometry 是 plane：`label=0`，代表可通行地板。
+- 否則，名稱包含 `stair`：`label=2`，代表樓梯。
 - 其他 collision：`label=1`，代表障礙物。
+
+這個順序是刻意的：樓板模型應視為 floor；若模型名稱同時描述 floor 與 stair access，也會優先使用 floor semantics，避免整片樓板被誤標成 stair。
 
 `entity_id` 來自 Gazebo collision entity id，會被 exporter 聚合成 leaf 的 dominant entity，方便後續回查 leaf 主要來自哪個物件。
 
@@ -472,7 +477,7 @@ OCTREE_HIDE_POINTS=0 ./scripts/run_visualization.sh octree
 - `OCTREE_REBUILD_HZ`：Octree viewer 每秒最多更新次數。
 - `OCTREE_VOXEL_MODE`：`centers`、`boxes`、`hybrid`、`center-boxes`。
 - `OCTREE_HIDE_POINTS`：`1` 隱藏原始點雲，`0` 顯示原始點雲。
-- `OCTREE_COLOR_MODE`：`depth`、`label`、`probability`。
+- `OCTREE_COLOR_MODE`：`depth`、`label`、`probability`，腳本預設為 `probability`。
 - `POINTCLOUD_POINT_SIZE`：Python pointcloud viewer 點大小。
 - `POINTCLOUD_MAX_RENDER_POINTS`：Python pointcloud viewer 最多顯示點數。
 
@@ -527,7 +532,7 @@ Viewer 每秒最多解析、重建 Octree、刷新畫面的次數。預設是 `1
 
 `--label-color`
 
-改用語義顏色，而不是 depth 顏色：
+改用語義顏色，而不是 probability / depth 顏色：
 
 - 綠色：Free
 - 紅色：Obstacle
@@ -537,7 +542,7 @@ Viewer 每秒最多解析、重建 Octree、刷新畫面的次數。預設是 `1
 
 依 `obstacle_probability` 使用連續色階。低概率 voxel 會偏淡藍、較不醒目；中間概率偏黃；接近 `1.0` 的 voxel 會變成亮紅，適合檢查障礙物風險分布。
 
-Stair / cross-floor voxel 在 probability color 模式下會固定顯示為亮紫紅色，不會因樓梯的低障礙概率而變淡。
+Stair / cross-floor voxel 在所有 color mode 下都會固定顯示為亮紫紅色，不會因樓梯的低障礙概率或 depth 色階而變淡。
 
 目前 Gazebo plugin 發出的點雲已包含 semantic label 與 `obstacle_probability`，因此 `label` 與 `probability` color mode 都可以直接使用。
 
@@ -557,7 +562,7 @@ Stair / cross-floor voxel 在 probability color 模式下會固定顯示為亮�
 - `FEATURE_FLOOR_Z`：第 0 層樓的 z 原點。
 - `FEATURE_STORY_HEIGHT`：樓層週期高度，預設 `4`。
 - `FEATURE_FLOOR_SURFACE_OFFSET`：每層樓內可通行地板面的局部 z offset。
-- `FEATURE_CEILING_OFFSET`：每層樓內天花板局部 z offset，預設 `3`。
+- `FEATURE_CEILING_OFFSET`：每層樓內天花板局部 z offset，腳本預設 `4`。
 - `FEATURE_NEAR_FLOOR`：判斷接近地板的距離帶。
 - `FEATURE_NEAR_CEILING`：判斷接近天花板的距離帶。
 
@@ -605,7 +610,7 @@ Octree 最大深度。這會影響 leaf voxel 大小，也會影響輸出的訓�
 
 `--ceiling-offset`
 
-每層樓內天花板局部 z offset。若牆高 3m，通常設為 `3`。
+每層樓內天花板局部 z offset。若地板厚度 1m、牆高 3m，且你想用樓層週期頂端作為 ceiling reference，可使用腳本預設 `4`；若要表示單純室內淨高，則可改成 `3`。
 
 `--near-floor`
 
@@ -667,7 +672,14 @@ FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 
 ## 9. 畫面顏色與意義
 
-在預設 depth color 模式下：
+目前 `scripts/run_visualization.sh` 預設使用 probability color mode：
+
+- 淡藍：`obstacle_probability` 接近 `0`。
+- 黃色：中間風險。
+- 亮紅：`obstacle_probability` 接近 `1`。
+- 亮紫紅色：Stair 或 cross-floor，所有 color mode 都會優先高亮。
+
+若切換成 depth color mode：
 
 - 白色點：原始點雲，只有未使用 `--no-points` 時才顯示。
 - 彩色點：Octree leaf voxel center。
@@ -677,13 +689,6 @@ FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 - 偏黃或紅色：較深層 depth，通常代表較小的 voxel。
 
 PCL 的 point size 是螢幕像素大小，不是真實世界尺寸。因此要看 voxel 實際體積，請使用 `--voxel-mode boxes` 或 `--voxel-mode center-boxes`。
-
-若使用 probability color 模式：
-
-- 淡藍：`obstacle_probability` 接近 `0`。
-- 黃色：中間風險。
-- 亮紅：`obstacle_probability` 接近 `1`。
-- 亮紫紅色：Stair 或 cross-floor。
 
 ## 10. 效能調整建議
 
