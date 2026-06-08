@@ -10,6 +10,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <gz/common/Mesh.hh>
@@ -858,6 +859,109 @@ gz::msgs::PointCloudPacked DynamicWorldCloud::BuildPointCloudMessage() const
           ? this->max_points_per_publish_
           : sourceCount;
 
+  std::vector<std::size_t> selectedIndices;
+  selectedIndices.reserve(publishCount);
+  std::vector<uint8_t> selected(sourceCount, 0);
+
+  const auto addIndex =
+      [&](std::size_t _index) -> bool
+      {
+        if (_index >= sourceCount || selected[_index] != 0 ||
+            selectedIndices.size() >= publishCount)
+          return false;
+        selected[_index] = 1;
+        selectedIndices.push_back(_index);
+        return true;
+      };
+
+  const auto addStrided =
+      [&](const std::vector<std::size_t> &_indices, std::size_t _target)
+      {
+        if (_indices.empty() || selectedIndices.size() >= publishCount || _target == 0)
+          return;
+        const std::size_t remaining = publishCount - selectedIndices.size();
+        const std::size_t count = std::min(_target, remaining);
+        const std::size_t sourceSize = _indices.size();
+        for (std::size_t i = 0; i < count && selectedIndices.size() < publishCount; ++i)
+        {
+          const std::size_t sourceIndex =
+              count >= sourceSize ? i : (i * sourceSize) / count;
+          addIndex(_indices[std::min(sourceIndex, sourceSize - 1)]);
+        }
+      };
+
+  if (publishCount < sourceCount)
+  {
+    std::unordered_map<uint32_t, std::vector<std::size_t>> byEntity;
+    byEntity.reserve(this->entity_clouds_.size() * 2 + 1);
+    std::vector<std::size_t> stairIndices;
+    std::vector<std::size_t> obstacleIndices;
+    std::vector<std::size_t> freeIndices;
+    stairIndices.reserve(sourceCount / 20 + 1);
+    obstacleIndices.reserve(sourceCount / 3 + 1);
+    freeIndices.reserve(sourceCount / 2 + 1);
+
+    for (std::size_t i = 0; i < sourceCount; ++i)
+    {
+      const PointSemantic semantic =
+          i < this->global_semantics_.size()
+              ? this->global_semantics_[i]
+              : PointSemantic{};
+      byEntity[semantic.entity_id].push_back(i);
+      if (semantic.label == 2)
+        stairIndices.push_back(i);
+      else if (semantic.label == 1 || semantic.obstacle_probability >= 0.5f)
+        obstacleIndices.push_back(i);
+      else
+        freeIndices.push_back(i);
+    }
+
+    // Give every entity a small quota first. This makes newly spawned walls or
+    // furniture visible to downstream Octree/RF planning even under a global
+    // point cap.
+    for (const auto &[entityId, indices] : byEntity)
+    {
+      (void)entityId;
+      const PointSemantic semantic =
+          !indices.empty() && indices.front() < this->global_semantics_.size()
+              ? this->global_semantics_[indices.front()]
+              : PointSemantic{};
+      const std::size_t quota =
+          semantic.label == 2 ? 96U :
+          (semantic.label == 1 || semantic.obstacle_probability >= 0.5f ? 64U : 32U);
+      addStrided(indices, quota);
+    }
+
+    const std::size_t targetStairs =
+        std::min<std::size_t>(stairIndices.size(), publishCount / 5);
+    const std::size_t targetObstacles =
+        std::min<std::size_t>(obstacleIndices.size(), (publishCount * 2) / 5);
+    addStrided(stairIndices, targetStairs);
+    addStrided(obstacleIndices, targetObstacles);
+
+    if (selectedIndices.size() < publishCount)
+      addStrided(freeIndices, publishCount - selectedIndices.size());
+    if (selectedIndices.size() < publishCount)
+    {
+      for (std::size_t i = 0; i < publishCount && selectedIndices.size() < publishCount; ++i)
+      {
+        const std::size_t sourceIndex = (i * sourceCount) / publishCount;
+        addIndex(sourceIndex);
+      }
+    }
+    if (selectedIndices.size() < publishCount)
+    {
+      for (std::size_t sourceIndex = 0;
+           sourceIndex < sourceCount && selectedIndices.size() < publishCount;
+           ++sourceIndex)
+      {
+        addIndex(sourceIndex);
+      }
+    }
+
+    std::sort(selectedIndices.begin(), selectedIndices.end());
+  }
+
   msg.set_height(1);
   msg.set_width(static_cast<uint32_t>(publishCount));
   msg.set_is_bigendian(false);
@@ -868,7 +972,7 @@ gz::msgs::PointCloudPacked DynamicWorldCloud::BuildPointCloudMessage() const
   for (std::size_t i = 0; i < publishCount; ++i)
   {
     const std::size_t sourceIndex =
-        publishCount == sourceCount ? i : (i * sourceCount) / publishCount;
+        publishCount == sourceCount ? i : selectedIndices[i];
     const auto &pt = this->global_cloud_[sourceIndex];
     const PointSemantic semantic =
         sourceIndex < this->global_semantics_.size()

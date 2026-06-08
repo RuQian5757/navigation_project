@@ -15,11 +15,16 @@ add_library(navigation_octree STATIC
     src/octree_manager.cpp
     src/leaf_feature_exporter.cpp
     src/random_forest_voxel_predictor.cpp
+    src/astar_planner.cpp
 )
 
 target_link_libraries(navigation_octree PRIVATE Threads::Threads)
 
 target_include_directories(navigation_octree PUBLIC ${PROJECT_SOURCE_DIR}/include)
+
+set_target_properties(navigation_octree PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
 
 add_executable(navigation_node
     src/main.cpp
@@ -40,6 +45,17 @@ add_executable(leaf_feature_exporter_gazebo
 )
 
 target_link_libraries(leaf_feature_exporter_gazebo PRIVATE
+    navigation_octree
+    gz-transport13::gz-transport13
+    gz-msgs10::gz-msgs10
+    Threads::Threads
+)
+
+add_executable(rf_octree_path_planner_gazebo
+    src/gazebo_rf_path_planner.cpp
+)
+
+target_link_libraries(rf_octree_path_planner_gazebo PRIVATE
     navigation_octree
     gz-transport13::gz-transport13
     gz-msgs10::gz-msgs10

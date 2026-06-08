@@ -16,6 +16,8 @@ ground-truth point cloud from world collision geometry.
 - Detects spawned and deleted entities during simulation
 - Preserves full XYZ coordinates for multi-floor navigation
 - Exposes `GetCurrentPointCloud()` as `const pcl::PointCloud<pcl::PointXYZ>&`
+- Companion `RFOctreePathPlanner` plugin builds an RF Octree, runs A*, and
+  renders the path as visual-only cylinders
 
 ## Dependencies
 
@@ -33,10 +35,13 @@ From the repository root:
 mkdir -p build
 cd build
 cmake ..
-cmake --build . --target dynamic_world_cloud
+cmake --build . --target dynamic_world_cloud_plugins
 ```
 
-The plugin target builds `build/dynamic_world_cloud/libDynamicWorldCloud.so`.
+The plugin target builds:
+
+- `build/dynamic_world_cloud/libDynamicWorldCloud.so`
+- `build/dynamic_world_cloud/libRFOctreePathPlanner.so`
 
 ## Build With colcon
 
@@ -61,6 +66,17 @@ source install/setup.bash
 </plugin>
 ```
 
+Predict world path planning plugin example:
+
+```xml
+<plugin filename="RFOctreePathPlanner" name="RFOctreePathPlanner">
+  <transport_topic>/world/dynamic_cloud</transport_topic>
+  <rf_model>models/random_forest_voxel_model.rf.txt</rf_model>
+  <start>0,-5,1.2</start>
+  <goal>0,0,9.2</goal>
+</plugin>
+```
+
 ## Semantic Fields
 
 The published `PointCloudPacked` contains:
@@ -82,6 +98,6 @@ model that describes stair access is not labeled as a stair surface.
 When launching from this repository without installation, use:
 
 ```bash
-cmake --build build --target dynamic_world_cloud
+cmake --build build --target dynamic_world_cloud_plugins
 ./scripts/run_gazebo.sh gazebo/maps/warehouse_world.sdf
 ```

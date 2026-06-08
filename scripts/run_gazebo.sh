@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_PLUGIN_DIR="${PROJECT_ROOT}/build/dynamic_world_cloud"
 PLUGIN_LIB="${BUILD_PLUGIN_DIR}/libDynamicWorldCloud.so"
+PATH_PLUGIN_LIB="${BUILD_PLUGIN_DIR}/libRFOctreePathPlanner.so"
 GAZEBO_MAPS_DIR="${PROJECT_ROOT}/gazebo/maps"
 GAZEBO_MODELS_DIR="${GAZEBO_MAPS_DIR}/models"
 
@@ -47,6 +48,12 @@ if [ ! -f "$PLUGIN_LIB" ]; then
   echo "ERROR: Plugin library not found: $PLUGIN_LIB"
   echo "Please build it first with: cmake --build build --target dynamic_world_cloud"
   exit 2
+fi
+
+if [ ! -f "$PATH_PLUGIN_LIB" ]; then
+  echo "WARNING: RF path planner plugin not found: $PATH_PLUGIN_LIB"
+  echo "If your world uses RFOctreePathPlanner, build it with:"
+  echo "  cmake --build build --target dynamic_world_cloud_plugins"
 fi
 
 export LD_LIBRARY_PATH="${BUILD_PLUGIN_DIR}:${LD_LIBRARY_PATH:-}"

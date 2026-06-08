@@ -108,6 +108,10 @@ Octree 建構時，每個 leaf 會保留該 leaf 內部點集合的幾何統計�
   - `depth`
 - `computeTraversalCost()` 提供 加權成本，適合 A* 或 Hybrid A*。
 - 障礙節點成本極高，樓梯與跨層節點成本也能調整。
+- `AStarPlanner` 會使用 6 方向 leaf neighbor graph 搜尋路徑，並輸出 `node_indices` 與 `PathWaypoint` polyline。
+- A* 的硬限制來自 `computeTraversalInfo()`：Obstacle、過高 obstacle probability、不同房間且非樓梯跨層都不可通行。
+- A* 的 edge cost 會再加入 probability、stair、cross-floor、vertical movement 權重，讓 RF predicted 風險直接影響路徑。
+- Heuristic 使用 Euclidean distance，並乘上目前 leaf 的 `obstacle_probability` 風險倍率；若跨層但目前不在 stair/cross-floor leaf，也會加入額外 bias，引導搜尋更快靠近樓梯連通區。
 
 ## 文件結構
 
@@ -116,20 +120,25 @@ Octree 建構時，每個 leaf 會保留該 leaf 內部點集合的幾何統計�
 - `src/main.cpp`：簡單執行範例。
 - `src/leaf_feature_exporter.cpp`：Leaf 特徵 CSV 輸出。
 - `src/gazebo_leaf_feature_exporter.cpp`：訂閱 Gazebo topic 並輸出 leaf feature CSV。
+- `src/gazebo_rf_path_planner.cpp`：訂閱 Gazebo topic、建立 RF Octree、執行 A* 並發布 Gazebo marker。
 - `include/random_forest_voxel_predictor.h`：C++ Random Forest leaf 推論 API。
 - `src/random_forest_voxel_predictor.cpp`：讀取 `.rf.txt` 並推論 `label` / `obstacle_probability`。
+- `include/astar_planner.h`：A* planner API 與 path waypoint 格式。
+- `src/astar_planner.cpp`：使用 Octree neighbor graph、label、probability 與 cross-floor 資訊搜尋路徑。
 - `python/train_model.py`：由 `data/train_*.csv` 訓練 Random Forest，並輸出 Python `.pkl` 與 C++ `.rf.txt`。
 - `tests/test_octree.cpp`：功能驗證測試。
 - `scripts/visualize_octree_gazebo.cpp`：訂閱 Gazebo `/world/dynamic_cloud` 的即時 Octree viewer。
 - `scripts/run_feature_export.sh`：Gazebo leaf feature CSV 共用底層腳本。
 - `scripts/run_feature_export_predict.sh`：輸出模型評估用 predict feature CSV。
 - `scripts/run_feature_export_rf.sh`：載入 RF 模型並輸出已推論 feature CSV。
+- `scripts/run_path_planning.sh`：外部 RF Octree + A* debug planner；展示主流程使用 `RFOctreePathPlanner` plugin。
+- `scripts/run_predict_with_path.sh`：一次啟動 predict world 與 RF A* 路徑規劃。
 - `docs/project_workflow.md`：目前專案完整操作流程。
 
 ## 建議後續擴充
 
-1. 將 RF 推論結果接到正式導航節點的 A* / Hybrid A* cost map。
+1. 增加 Gazebo start / goal marker model 讀取模式，讓展示時可直接拖曳起終點。
 2. 增加模型版本資訊與 feature schema 驗證，避免訓練與 C++ 推論欄位不一致。
-3. 實作 3D A* / Hybrid A* 路徑規劃。
+3. 實作 Hybrid A* path planner。
 4. 增加跨深度 26 鄰居搜尋。
 5. 加入房間 ID 標記自動化與樓層區分。

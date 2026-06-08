@@ -74,7 +74,9 @@ RF 3D Octree 視覺化:
 位置：
 
 - `include/octree_manager.h`
+- `include/astar_planner.h`
 - `src/octree_manager.cpp`
+- `src/astar_planner.cpp`
 
 功能：
 
@@ -86,6 +88,22 @@ RF 3D Octree 視覺化:
 - 支援 6 方向正交鄰居。
 - 提供 A* 可用的 traversal cost 資訊。
 - 建構 leaf 時會根據 leaf 內點集合計算 centroid、avg_normal、covariance eigenvalues、linearity、flatness、roughness、curvature。
+
+### A* path planner
+
+位置：
+
+- `include/astar_planner.h`
+- `src/astar_planner.cpp`
+
+功能：
+
+- 使用 `OctreeManager` 的 leaf neighbor graph 搜尋路徑。
+- 支援從 `Point3D` 自動找到所在 leaf，也支援直接用 leaf node index 規劃。
+- 使用 `label`、`obstacle_probability`、`is_cross_floor`、vertical movement 計算 edge cost 與 heuristic。
+- 可規劃不同樓層起點到終點，只要樓梯 / cross-floor leaf 在 Octree neighbor graph 中連通。
+- 輸出 `AStarPath::node_indices` 與 `AStarPath::waypoints`。`PathWaypoint` 包含 `position`、`label`、`obstacle_probability`、`is_cross_floor`、`room_id`，後續 Gazebo plugin 可直接把 waypoints 畫成 line strip 或 marker。
+- `dynamic_world_cloud/RFOctreePathPlanner.cc` 會把這條流程接到 Gazebo：訂閱 `/world/dynamic_cloud`、建立 RF predicted Octree、跑 A*，最後生成 visual-only cylinder path model。
 
 ### Leaf feature exporter
 
@@ -376,7 +394,7 @@ mkdir -p build
 cmake -S . -B build
 cmake --build build --target navigation_octree
 cmake --build build --target test_octree
-cmake --build build --target dynamic_world_cloud
+cmake --build build --target dynamic_world_cloud_plugins
 cmake --build build --target leaf_feature_exporter_gazebo
 ```
 
@@ -409,6 +427,8 @@ chmod +x scripts/run_visualization_rf.sh
 chmod +x scripts/run_feature_export.sh
 chmod +x scripts/run_feature_export_predict.sh
 chmod +x scripts/run_feature_export_rf.sh
+chmod +x scripts/run_path_planning.sh
+chmod +x scripts/run_predict_with_path.sh
 ```
 
 ## 6. 執行流程
@@ -430,6 +450,8 @@ chmod +x scripts/run_feature_export_rf.sh
 ```text
 /world/dynamic_cloud
 ```
+
+`warehouse_predict_world.sdf` 會載入 `RFOctreePathPlanner` plugin。它會在 world 內生成 visual-only cylinder path model，因此不依賴 Gazebo `MarkerManager`。
 
 `scripts/run_gazebo.sh` 會自動設定：
 
@@ -893,6 +915,218 @@ OCTREE_RF_MODEL=models/random_forest_voxel_model.rf.txt ./scripts/run_visualizat
 
 注意：`FEATURE_WEAK_LABELS=1` 是規則弱標註輸出模式，會在 export 時覆寫 label。若目標是看 RF 模型結果，請不要同時啟用 `FEATURE_WEAK_LABELS=1`。
 
+### Terminal 5：RF Octree + A* 路徑畫到 Gazebo
+
+先確認 RF 模型已存在：
+
+```text
+models/random_forest_voxel_model.rf.txt
+```
+
+接著在另一個 terminal 指定起點與終點：
+
+```bash
+./scripts/run_path_planning.sh
+```
+
+預設展示座標對應 `warehouse_predict_world.sdf` 裡的 visual-only markers：
+
+```text
+start_marker = 6, -2, 1.2
+goal_marker  = 0,  0, 9.2
+```
+
+這兩個 marker 只有 `<visual>`，沒有 `<collision>`，因此 `DynamicWorldCloud` 不會將它們取樣進 `/world/dynamic_cloud`，Octree 也不會把它們當成障礙物。
+
+資料流如下：
+
+```text
+Gazebo DynamicWorldCloud
+  -> /world/dynamic_cloud PointCloudPacked
+  -> RFOctreePathPlanner Gazebo system plugin
+  -> OctreeManager 建構 leaf geometry / normal / density
+  -> RandomForestVoxelPredictor 覆寫 leaf label / obstacle_probability
+  -> AStarPlanner 使用 RF predicted leaf graph 找路
+  -> visual-only cylinder path model
+  -> Gazebo GUI 顯示青色路徑
+```
+
+常用調整：
+
+```bash
+PATH_PLAN_HZ=0.5 \
+PATH_MAX_DEPTH=9 \
+PATH_MAX_POINTS=120000 \
+PATH_BLOCK_PROBABILITY=0.92 \
+PATH_PROBABILITY_WEIGHT=6 \
+PATH_VERTICAL_WEIGHT=0.75 \
+PATH_ENDPOINT_SNAP_RADIUS=1.5 \
+PATH_STAIR_CONNECTION_RADIUS=1.25 \
+PATH_ALLOW_CROSS_FLOOR=1 \
+./scripts/run_path_planning.sh
+```
+
+若只想跑第一包點雲做單次路徑檢查：
+
+```bash
+./scripts/run_path_planning.sh --once
+```
+
+展示模式預設使用 `start_marker` / `goal_marker` 的固定座標。導航實驗若要重複測很多組 `(start, goal)`，仍可用 `PATH_START` / `PATH_GOAL` 覆寫，不需要修改 SDF。
+
+Planner 會先把指定座標轉成 Octree leaf。如果該 leaf 被 RF 判成不可通行，會在 `PATH_ENDPOINT_SNAP_RADIUS` 內吸附到最近的 free / stair leaf。log 中的 `start_snapped=...m` 或 `goal_snapped=...m` 代表吸附距離。
+
+樓梯區域除了 6-neighbor graph，也會啟用 `PATH_STAIR_CONNECTION_RADIUS` 內的 virtual stair connector edge。這是為了解決自適應 voxel 深度不同、樓梯斜面取樣稀疏時，單純 6-neighbor 可能讓樓梯與樓層斷開的問題。
+
+若希望用單一指令啟動 predict world，可使用：
+
+```bash
+./scripts/run_predict_with_path.sh
+```
+
+`warehouse_predict_world.sdf` 會自動載入 `RFOctreePathPlanner` system plugin，所以不需要額外執行外部 planner。若要 debug 外部 planner，可使用：
+
+```bash
+PREDICT_USE_EXTERNAL_PLANNER=1 ./scripts/run_predict_with_path.sh
+```
+
+## 10. A* 路徑規劃
+
+Planner API 位於：
+
+```text
+include/astar_planner.h
+src/astar_planner.cpp
+```
+
+基本用法：
+
+```cpp
+#include "astar_planner.h"
+#include "octree_manager.h"
+
+navigation::OctreeManager octree(config);
+octree.setMLPredictor(rf_predictor.asMLPredictor()); // 可選：使用 RF predicted label
+octree.initialize(samples);
+
+navigation::AStarPlannerConfig planner_config;
+planner_config.allow_cross_floor = true;
+navigation::AStarPlanner planner(octree, planner_config);
+
+navigation::AStarPath path = planner.findPath(
+    navigation::Point3D{start_x, start_y, start_z},
+    navigation::Point3D{goal_x, goal_y, goal_z});
+
+if (path.success) {
+    for (const navigation::PathWaypoint& waypoint : path.waypoints) {
+        // waypoint.position 可直接給 Gazebo marker / line strip plugin 畫路徑
+    }
+}
+```
+
+### 成本設計
+
+A* 的成本分成三層。
+
+第一層是硬限制，由 `OctreeManager::computeTraversalInfo()` 判斷：
+
+- `label == Obstacle` 不可通行。
+- `obstacle_probability >= 0.95` 不可通行。
+- `room_id` 不同且不是 stair / cross-floor 連通，不可通行。
+- 若跨樓層，必須讓 `allow_cross_floor=true`，並且路徑上有 stair / cross-floor leaf。
+
+第二層是 edge cost。A* 從目前 leaf 走到鄰居 leaf 時，會先使用 Octree 既有 traversal cost，再額外加入：
+
+- `probability_weight * probability^2 * distance`：高 RF 障礙概率會大幅增加成本，讓路徑偏向低風險 leaf。
+- `stair_weight * distance`：樓梯可通行，但比平地略貴。
+- `cross_floor_weight * distance`：跨樓層連通可通行，但避免無必要上下樓。
+- `vertical_weight * abs(dz)`：垂直移動額外成本，讓同樓層路徑優先走平面。
+
+第三層是 heuristic。Planner 使用 risk-aware weighted heuristic：
+
+```text
+h(n) =
+  heuristic_weight *
+  (
+    euclidean_distance(n, goal) * (1 + probability_weight * n.obstacle_probability)
+    + vertical_weight * abs(n.z - goal.z)
+    + label_penalty
+    + cross_floor_bias
+  )
+```
+
+設計理由：
+
+- `euclidean_distance` 保留 A* 往終點收斂的基本方向。
+- `obstacle_probability` 讓 RF 判斷出的高風險 leaf 在搜尋早期就較不吸引。
+- `label_penalty` 讓 stair 有溫和成本、obstacle 幾乎不可用。
+- `cross_floor_bias` 在目標不同樓層時，鼓勵搜尋靠近 stair / cross-floor leaf。
+
+這個 heuristic 是 navigation-oriented weighted heuristic，重點是即時性與風險避讓，不是嚴格保證最短距離。若想更接近最短路，可降低：
+
+- `heuristic_weight`
+- `probability_weight`
+- `vertical_weight`
+
+### Planner 參數
+
+`AStarPlannerConfig`：
+
+- `allow_cross_floor`：是否允許樓梯 / cross-floor 連通，跨樓層路徑需設為 `true`。
+- `max_expansions`：最多展開幾個 leaf，避免壞 graph 無限搜尋。
+- `heuristic_weight`：heuristic 權重，越高越快但越偏向 greedy。
+- `probability_weight`：障礙概率成本權重，越高越避開高風險 voxel。
+- `stair_weight`：樓梯成本權重。
+- `cross_floor_weight`：跨樓層成本權重。
+- `vertical_weight`：垂直移動成本權重。
+- `obstacle_block_probability`：planner 額外的 blocking threshold，預設 `0.92`。
+- `smooth_collinear_waypoints`：輸出前移除同方向的中間 waypoint，保留 semantic 變化點。
+- `snap_endpoints_to_traversable`：起點/終點落在不可通行 leaf 時，自動吸附到附近可通行 leaf。
+- `endpoint_snap_radius`：endpoint snapping 搜尋半徑，腳本預設 `1.5m`。
+- `enable_stair_connection_edges`：啟用樓梯附近 virtual connector edge。
+- `stair_connection_radius`：樓梯 connector 搜尋半徑，腳本預設 `1.25m`。
+
+### Gazebo path visualization 接法
+
+目前已提供外部 Gazebo transport 節點：
+
+```text
+dynamic_world_cloud/RFOctreePathPlanner.cc
+scripts/run_path_planning.sh
+```
+
+目前展示主流程使用 Gazebo system plugin，不寫入 CSV，而是直接把 RF predicted Octree 交給 A*，再把 path waypoint 生成 visual-only cylinder model：
+
+```text
+/world/dynamic_cloud
+  -> OctreeManager
+  -> RandomForestVoxelPredictor
+  -> AStarPlanner
+  -> AStarPath::waypoints
+  -> rf_astar_path_visual_* model
+  -> visual-only cylinder segments
+```
+
+`PathWaypoint::position` 是世界座標中的 voxel center。`label`、`obstacle_probability`、`is_cross_floor` 可用來決定 marker 顏色，例如：
+
+- free path：綠色
+- stair / cross-floor path：亮紫紅色
+- 高 probability path segment：黃色或紅色
+
+目前實作的 Gazebo 顯示：
+
+- path line：青色 cylinder segments
+- start：綠色 visual-only sphere
+- goal：紅色 visual-only sphere
+- path model：`rf_astar_path_visual_*`
+
+如果 Gazebo 看不到路徑，請確認：
+
+- 使用 GUI 模式啟動 Gazebo，不要加 `-s`。
+- 已建置 `cmake --build build --target dynamic_world_cloud_plugins`。
+- `warehouse_predict_world.sdf` 有載入 `RFOctreePathPlanner`。
+- Gazebo console 有印出 `[RFOctreePathPlanner] ... path=success`。
+
 ### CSV 欄位重點
 
 每一列代表一個 Octree leaf voxel。主要特徵包含：
@@ -925,7 +1159,7 @@ FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 
 這些標籤適合拿來 bootstrap 或人工校正，不建議直接視為最終 ground truth。
 
-## 10. 畫面顏色與意義
+## 11. 畫面顏色與意義
 
 目前 `scripts/run_visualization.sh` 預設使用 probability color mode：
 
@@ -945,7 +1179,7 @@ FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
 
 PCL 的 point size 是螢幕像素大小，不是真實世界尺寸。因此要看 voxel 實際體積，請使用 `--voxel-mode boxes` 或 `--voxel-mode center-boxes`。
 
-## 11. 效能調整建議
+## 12. 效能調整建議
 
 如果 Gazebo 或 viewer 很卡，依序調整：
 
@@ -975,14 +1209,14 @@ OCTREE_REBUILD_HZ=0.5 \
 ./scripts/run_visualization.sh octree
 ```
 
-## 12. 常見問題
+## 13. 常見問題
 
 ### 看不到 `/world/dynamic_cloud`
 
 確認 plugin 已建置：
 
 ```bash
-cmake --build build --target dynamic_world_cloud
+cmake --build build --target dynamic_world_cloud_plugins
 ```
 
 確認用 `scripts/run_gazebo.sh` 啟動，讓 plugin path 正確設定。

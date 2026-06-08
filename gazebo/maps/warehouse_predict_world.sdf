@@ -12,6 +12,43 @@
       <pcd_directory>./pcd</pcd_directory>
       <transport_topic>/world/dynamic_cloud</transport_topic>
     </plugin>
+    <plugin name='RFOctreePathPlanner' filename='RFOctreePathPlanner'>
+      <transport_topic>/world/dynamic_cloud</transport_topic>
+      <rf_model>models/random_forest_voxel_model.rf.txt</rf_model>
+      <start>6,-2,1.2</start>
+      <goal>0,0,9.2</goal>
+      <max_depth>9</max_depth>
+      <max_points>50000</max_points>
+      <plan_hz>0.1</plan_hz>
+      <line_radius>0.06</line_radius>
+      <z_offset>0.10</z_offset>
+      <block_probability>0.92</block_probability>
+      <enable_obstacle_clearance>true</enable_obstacle_clearance>
+      <obstacle_clearance_radius>0.2</obstacle_clearance_radius>
+      <obstacle_clearance_z_tolerance>1.5</obstacle_clearance_z_tolerance>
+      <block_edges_through_obstacles>true</block_edges_through_obstacles>
+      <edge_obstacle_clearance_radius>0.03</edge_obstacle_clearance_radius>
+      <endpoint_snap_radius>1.5</endpoint_snap_radius>
+      <stair_connection_radius>1.25</stair_connection_radius>
+      <constrain_stair_transitions>true</constrain_stair_transitions>
+      <stair_endpoint_tolerance>0.6</stair_endpoint_tolerance>
+      <stair_step_max_vertical>0.8</stair_step_max_vertical>
+      <stair_floor_connection_max_vertical>1.2</stair_floor_connection_max_vertical>
+      <max_non_stair_vertical_step>0.35</max_non_stair_vertical_step>
+      <constrain_stair_exits_to_floor_levels>true</constrain_stair_exits_to_floor_levels>
+      <stair_floor_exit_tolerance>0.45</stair_floor_exit_tolerance>
+      <constrain_stair_direction>true</constrain_stair_direction>
+      <stair_direction_dot_min>0.5</stair_direction_dot_min>
+      <stair_entry_lateral_margin>0.25</stair_entry_lateral_margin>
+      <stair_entry_forward_margin>0.55</stair_entry_forward_margin>
+      <probability_weight>6</probability_weight>
+      <vertical_weight>0.75</vertical_weight>
+      <allow_cross_floor>true</allow_cross_floor>
+      <floor_z>0</floor_z>
+      <story_height>4</story_height>
+      <floor_surface_offset>1</floor_surface_offset>
+      <ceiling_offset>4</ceiling_offset>
+    </plugin>
     <gravity>0 0 -9.8000000000000007</gravity>
     <magnetic_field>5.5644999999999998e-06 2.2875799999999999e-05 -4.2388400000000002e-05</magnetic_field>
     <atmosphere type='adiabatic'/>
@@ -145,7 +182,7 @@
         <pose>0 0 0 0 0 0</pose>
         <enable_wind>false</enable_wind>
       </link>
-      <pose>-10 0 1 0 0 1.5700000000000001</pose>
+      <pose>-10 0 1 0 0 1.5699999999999998</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='wall_20x0.15x3_1'>
@@ -271,111 +308,957 @@
       <pose>0 0 8 0 0 0</pose>
       <self_collide>false</self_collide>
     </model>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3</uri>
-      <name>wall_20x0.15x3_3</name>
-      <pose>10 0 5 0 0 1.5700000000000001</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3</uri>
-      <name>wall_20x0.15x3_4</name>
+    <model name='wall_20x0.15x3_3'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.449999988 0.449999988 0.449999988 1</ambient>
+            <diffuse>0.550000012 0.550000012 0.550000012 1</diffuse>
+            <specular>0.150000006 0.150000006 0.150000006 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>10 0 5 0 0 1.5699999999999998</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wall_20x0.15x3_4'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.449999988 0.449999988 0.449999988 1</ambient>
+            <diffuse>0.550000012 0.550000012 0.550000012 1</diffuse>
+            <specular>0.150000006 0.150000006 0.150000006 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
       <pose>0 -10 5 0 0 0</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3</uri>
-      <name>wall_20x0.15x3_5</name>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wall_20x0.15x3_5'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.449999988 0.449999988 0.449999988 1</ambient>
+            <diffuse>0.550000012 0.550000012 0.550000012 1</diffuse>
+            <specular>0.150000006 0.150000006 0.150000006 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
       <pose>0 10 5 0 0 0</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3</uri>
-      <name>wall_20x0.15x3_6</name>
-      <pose>-10 0 5 0 0 1.5700000000000001</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair</uri>
-      <name>stair_0</name>
-      <pose>-7.5 -3.5 4.9000000000000004 0 0 1.5700000000000001</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/floor_2</uri>
-      <name>floor_2</name>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wall_20x0.15x3_6'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_20x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.449999988 0.449999988 0.449999988 1</ambient>
+            <diffuse>0.550000012 0.550000012 0.550000012 1</diffuse>
+            <specular>0.150000006 0.150000006 0.150000006 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>-10 0 5 0 0 1.5699999999999998</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='stair_0'>
+      <link name='body'>
+        <inertial auto='true'>
+          <pose>0.35411018906933978 -0.0082306302323391818 2.078330947444432 0 0 0</pose>
+          <mass>51.961508697365396</mass>
+          <inertia>
+            <ixx>93.511406514567909</ixx>
+            <ixy>-0.11250304613580471</ixy>
+            <ixz>112.40059211400526</ixz>
+            <iyy>245.315980301927</iyy>
+            <iyz>0.076632425716615937</iyz>
+            <izz>186.77686255775899</izz>
+          </inertia>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.200000003 0.200000003 0.200000003 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>-7.4793915294818838 -3.3326081104876644 5.0600496248704578 0.0024011099787763059 -0.057285295271128134 1.5675077557529422</pose>
+      <static>false</static>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='floor_2'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/floor_2/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/floor_2/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.449999988 0.449999988 0.449999988 1</ambient>
+            <diffuse>0.550000012 0.550000012 0.550000012 1</diffuse>
+            <specular>0.150000006 0.150000006 0.150000006 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
       <pose>0 0 4 0 0 3.1400000000000001</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair</uri>
-      <name>stair</name>
-      <pose>-1.6000000000000003 -0.20000000000000004 0.90000000000000036 0 0 -1.5700000000000001</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair</uri>
-      <name>stair_1</name>
-      <pose>7.5 1.9999999999999998 0.89999999999999991 0 0 1.5700000000000001</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3</uri>
-      <name>wall_10x0.15x3</name>
-      <pose>2.1763043403625488 5.2441096305847168 0 0 0 -1.2614100502650951</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringC_01</uri>
-      <name>aws_robomaker_warehouse_ClutteringC_01</name>
-      <pose>-1.5369269847869873 -4.5516400337219238 0 0 0 0</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringC_01</uri>
-      <name>aws_robomaker_warehouse_ClutteringC_01_0</name>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='stair'>
+      <link name='body'>
+        <inertial auto='true'>
+          <pose>0.35411018906933978 -0.0082306302323391818 2.078330947444432 0 0 0</pose>
+          <mass>51.961508697365396</mass>
+          <inertia>
+            <ixx>93.511406514567909</ixx>
+            <ixy>-0.11250304613580471</ixy>
+            <ixz>112.40059211400526</ixz>
+            <iyy>245.315980301927</iyy>
+            <iyz>0.076632425716615937</iyz>
+            <izz>186.77686255775899</izz>
+          </inertia>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.200000003 0.200000003 0.200000003 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>-1.6401246595015551 -0.1824827066762881 0.93628507244676262 -0.009972265898030264 0.0047884171660616598 -1.5708328815188968</pose>
+      <static>false</static>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='stair_1'>
+      <link name='body'>
+        <inertial auto='true'>
+          <pose>0.35411018906933978 -0.0082306302323391818 2.078330947444432 0 0 0</pose>
+          <mass>51.961508697365396</mass>
+          <inertia>
+            <ixx>93.511406514567909</ixx>
+            <ixy>-0.11250304613580471</ixy>
+            <ixz>112.40059211400526</ixz>
+            <iyy>245.315980301927</iyy>
+            <iyz>0.076632425716615937</iyz>
+            <izz>186.77686255775899</izz>
+          </inertia>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/stair/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.200000003 0.200000003 0.200000003 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>7.5003327933831878 2.0151546063291215 0.93333382681673083 1.3219117857066957e-08 -0.0050807321703286879 1.5696779526441456</pose>
+      <static>false</static>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wall_10x0.15x3'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.200000003 0.200000003 0.200000003 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>2.1762999999999999 5.24411 0 0 0 -1.2614100000000001</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='aws_robomaker_warehouse_ClutteringC_01'>
+      <link name='link'>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringC_01/meshes/aws_robomaker_warehouse_ClutteringC_01_collision.DAE</uri>
+            </mesh>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.59999999999999998</mu>
+                <mu2>0.59999999999999998</mu2>
+                <fdir1>0 0 0</fdir1>
+                <slip1>0</slip1>
+                <slip2>0</slip2>
+              </ode>
+              <torsional>
+                <coefficient>1</coefficient>
+                <patch_radius>0</patch_radius>
+                <surface_radius>0</surface_radius>
+                <use_patch_radius>true</use_patch_radius>
+                <ode>
+                  <slip>0</slip>
+                </ode>
+              </torsional>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringC_01/meshes/aws_robomaker_warehouse_ClutteringC_01_visual.DAE</uri>
+            </mesh>
+          </geometry>
+          <meta>
+            <layer>1</layer>
+          </meta>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <static>true</static>
+      <pose>-1.0845500230789185 -7.3939933776855469 1 0 0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='aws_robomaker_warehouse_ClutteringC_01_0'>
+      <link name='link'>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringC_01/meshes/aws_robomaker_warehouse_ClutteringC_01_collision.DAE</uri>
+            </mesh>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.59999999999999998</mu>
+                <mu2>0.59999999999999998</mu2>
+                <fdir1>0 0 0</fdir1>
+                <slip1>0</slip1>
+                <slip2>0</slip2>
+              </ode>
+              <torsional>
+                <coefficient>1</coefficient>
+                <patch_radius>0</patch_radius>
+                <surface_radius>0</surface_radius>
+                <use_patch_radius>true</use_patch_radius>
+                <ode>
+                  <slip>0</slip>
+                </ode>
+              </torsional>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringC_01/meshes/aws_robomaker_warehouse_ClutteringC_01_visual.DAE</uri>
+            </mesh>
+          </geometry>
+          <meta>
+            <layer>1</layer>
+          </meta>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <static>true</static>
       <pose>-6.19137 4.1245799999999999 1 0 0 0</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringA_01</uri>
-      <name>aws_robomaker_warehouse_ClutteringA_01</name>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='aws_robomaker_warehouse_ClutteringA_01'>
+      <link name='link'>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringA_01/meshes/aws_robomaker_warehouse_ClutteringA_01_collision.DAE</uri>
+            </mesh>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.59999999999999998</mu>
+                <mu2>0.59999999999999998</mu2>
+                <fdir1>0 0 0</fdir1>
+                <slip1>0</slip1>
+                <slip2>0</slip2>
+              </ode>
+              <torsional>
+                <coefficient>1</coefficient>
+                <patch_radius>0</patch_radius>
+                <surface_radius>0</surface_radius>
+                <use_patch_radius>true</use_patch_radius>
+                <ode>
+                  <slip>0</slip>
+                </ode>
+              </torsional>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringA_01/meshes/aws_robomaker_warehouse_ClutteringA_01_visual.DAE</uri>
+            </mesh>
+          </geometry>
+          <meta>
+            <layer>1</layer>
+          </meta>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <static>true</static>
       <pose>6.6818200000000001 -5.6500599999999999 1 0 0 0</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringA_01</uri>
-      <name>aws_robomaker_warehouse_ClutteringA_01_0</name>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='aws_robomaker_warehouse_ClutteringA_01_0'>
+      <link name='link'>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringA_01/meshes/aws_robomaker_warehouse_ClutteringA_01_collision.DAE</uri>
+            </mesh>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.59999999999999998</mu>
+                <mu2>0.59999999999999998</mu2>
+                <fdir1>0 0 0</fdir1>
+                <slip1>0</slip1>
+                <slip2>0</slip2>
+              </ode>
+              <torsional>
+                <coefficient>1</coefficient>
+                <patch_radius>0</patch_radius>
+                <surface_radius>0</surface_radius>
+                <use_patch_radius>true</use_patch_radius>
+                <ode>
+                  <slip>0</slip>
+                </ode>
+              </torsional>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/aws_robomaker_warehouse_ClutteringA_01/meshes/aws_robomaker_warehouse_ClutteringA_01_visual.DAE</uri>
+            </mesh>
+          </geometry>
+          <meta>
+            <layer>1</layer>
+          </meta>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <static>true</static>
       <pose>2.9411499999999999 -2.7795200000000002 1 0 0 0</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3</uri>
-      <name>wall_2x0.15x3</name>
-      <pose>5.4284800000000004 5.1823100000000002 1 0 0 3.1248800000000001</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3</uri>
-      <name>wall_2x0.15x3_0</name>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wall_2x0.15x3_0'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.449999988 0.449999988 0.449999988 1</ambient>
+            <diffuse>0.550000012 0.550000012 0.550000012 1</diffuse>
+            <specular>0.150000006 0.150000006 0.150000006 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
       <pose>3.08229 -7.2313799999999997 1 0 0 -1.3428</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3</uri>
-      <name>wall_2x0.15x3_1</name>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wall_2x0.15x3_1'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_2x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.449999988 0.449999988 0.449999988 1</ambient>
+            <diffuse>0.550000012 0.550000012 0.550000012 1</diffuse>
+            <specular>0.150000006 0.150000006 0.150000006 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
       <pose>-5.0164900000000001 -5.04467 1 0 0 -0.75180899999999973</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/foldable_chair</uri>
-      <name>foldable_chair</name>
-      <pose>1.0571224689483643 -0.56957697868347168 1 0 0 0</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/Desk</uri>
-      <name>Desk</name>
-      <pose>1.2558599710464478 0.78299599885940574 1 0 0 -2.0153606440958973</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3</uri>
-      <name>wall_10x0.15x3_0</name>
-      <pose>1.3673908710479736 -4.9921951293945312 4 0 0 -1.5792499977038392</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3</uri>
-      <name>wall_10x0.15x3_1</name>
-      <pose>-4.3754544258117676 1.9656996726989746 4 0 0 -1.4886300185481876</pose>
-    </include>
-    <include>
-      <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3</uri>
-      <name>wall_10x0.15x3_2</name>
-      <pose>1.8626023530960083 4.1316070556640625 4 0 0 -0.96368699434126215</pose>
-    </include>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='foldable_chair'>
+      <static>true</static>
+      <link name='base_link'>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/foldable_chair/mesh/foldable_chair.dae</uri>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0.050000000000000003 0.40000000000000002 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.5 0.5 0.80000000000000004</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>1.0571200000000001 -0.569577 1 0 0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='Desk'>
+      <link name='link'>
+        <pose>0 0 0 0 0 0</pose>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/Desk/meshes/desk.obj</uri>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/Desk/meshes/desk.obj</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>1.2558600000002693 0.78299600000056468 0.99999942180545986 -8.8132304850004693e-12 7.0402170874420687e-11 -2.0153600000000034</pose>
+      <static>false</static>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wall_10x0.15x3_0'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.200000003 0.200000003 0.200000003 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>1.3673999999999999 -4.9922000000000004 5 0 0 -1.5793000000000001</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wall_10x0.15x3_1'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.200000003 0.200000003 0.200000003 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>-4.3754 1.9657 5 0 0 -1.4886000000000006</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wall_10x0.15x3_2'>
+      <static>true</static>
+      <link name='body'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <iyy>1</iyy>
+            <izz>1</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <collision name='collision'>
+          <density>10</density>
+          <geometry>
+            <mesh optimization='convex_decomposition'>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>file:///home/ruilun/project/navigation_project/gazebo/maps/models/wall_10x0.15x3/mesh.stl</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>1 1 1 1</ambient>
+            <diffuse>1 1 1 1</diffuse>
+            <specular>0.200000003 0.200000003 0.200000003 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>3.2185516357421875 5.0734515190124512 5 0 0 -0.96370000565484093</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='start_marker'>
+      <static>true</static>
+      <pose>6 -2 1.2 0 0 0</pose>
+      <link name='body'>
+        <visual name='visual'>
+          <geometry>
+            <sphere>
+              <radius>0.25</radius>
+            </sphere>
+          </geometry>
+          <material>
+            <ambient>0 1 0.150000006 1</ambient>
+            <diffuse>0 1 0.150000006 1</diffuse>
+            <specular>0.100000001 0.400000006 0.100000001 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='goal_marker'>
+      <static>true</static>
+      <pose>0 0 9.1999999999999993 0 0 0</pose>
+      <link name='body'>
+        <visual name='visual'>
+          <geometry>
+            <sphere>
+              <radius>0.25</radius>
+            </sphere>
+          </geometry>
+          <material>
+            <ambient>1 0.0500000007 0.0500000007 1</ambient>
+            <diffuse>1 0.0500000007 0.0500000007 1</diffuse>
+            <specular>0.400000006 0.100000001 0.100000001 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
     <light name='sun' type='directional'>
       <pose>0 0 10 0 0 0</pose>
       <cast_shadows>true</cast_shadows>

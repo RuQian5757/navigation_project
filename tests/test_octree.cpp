@@ -1,7 +1,9 @@
 #include "octree_manager.h"
 #include "leaf_feature_exporter.h"
+#include "astar_planner.h"
 
 #include <cassert>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -249,6 +251,132 @@ void testLeafPcaGeometryStats() {
     assert(header.find("pca_flatness") != std::string::npos);
 }
 
+int findNearestLeafByCenter(const OctreeManager& octree, const Point3D& target) {
+    int best_index = -1;
+    float best_distance = 1e30f;
+    const auto& nodes = octree.nodes();
+    for (int i = 0; i < static_cast<int>(nodes.size()); ++i) {
+        if (!nodes[i].leaf) {
+            continue;
+        }
+        const Point3D c = nodes[i].bounds.center();
+        const float dx = c.x - target.x;
+        const float dy = c.y - target.y;
+        const float dz = c.z - target.z;
+        const float distance = dx * dx + dy * dy + dz * dz;
+        if (distance < best_distance) {
+            best_distance = distance;
+            best_index = i;
+        }
+    }
+    return best_index;
+}
+
+void labelAllLeaves(OctreeManager& octree, VoxelLabel label, float probability) {
+    const int node_count = octree.getNodeCount();
+    for (int i = 0; i < node_count; ++i) {
+        const OctreeNode* node = octree.getNode(i);
+        if (node != nullptr && node->leaf) {
+            octree.assignLeafLabel(i, label, probability, 0, label == VoxelLabel::Stair);
+        }
+    }
+}
+
+void testAStarSingleFloorPath() {
+    std::vector<Point3D> points;
+    for (int i = 0; i <= 32; ++i) {
+        points.push_back({0.25f * static_cast<float>(i), 0.0f, 1.0f});
+    }
+
+    OctreeConfig config;
+    config.max_depth = 5;
+    config.corridor_max_voxel = 0.5f;
+    config.min_points_to_split = 1;
+    OctreeManager octree(config);
+    octree.initialize(points);
+    labelAllLeaves(octree, VoxelLabel::Free, 0.02f);
+
+    const int start = findNearestLeafByCenter(octree, {0.0f, 0.0f, 1.0f});
+    const int goal = findNearestLeafByCenter(octree, {8.0f, 0.0f, 1.0f});
+    assert(start >= 0 && goal >= 0 && start != goal);
+
+    AStarPlannerConfig planner_config;
+    planner_config.obstacle_block_probability = 0.995f;
+    planner_config.probability_weight = 40.0f;
+    AStarPlanner planner(octree, planner_config);
+    const AStarPath path = planner.findPathByNodeIndex(start, goal);
+    assert(path.success);
+    assert(path.node_indices.front() == start);
+    assert(path.node_indices.back() == goal);
+    assert(path.waypoints.size() >= 2);
+    assert(path.total_cost > 0.0f);
+}
+
+void testAStarProbabilityIncreasesCost() {
+    std::vector<Point3D> points;
+    for (int i = 0; i <= 32; ++i) {
+        points.push_back({0.25f * static_cast<float>(i), 0.0f, 1.0f});
+    }
+
+    OctreeConfig config;
+    config.max_depth = 5;
+    config.corridor_max_voxel = 0.5f;
+    config.min_points_to_split = 1;
+    OctreeManager octree(config);
+    octree.initialize(points);
+    labelAllLeaves(octree, VoxelLabel::Free, 0.02f);
+
+    const int start = findNearestLeafByCenter(octree, {0.0f, 0.0f, 1.0f});
+    const int goal = findNearestLeafByCenter(octree, {8.0f, 0.0f, 1.0f});
+    const int high_risk = findNearestLeafByCenter(octree, {4.0f, 0.0f, 1.0f});
+    assert(start >= 0 && goal >= 0 && high_risk >= 0);
+
+    AStarPlannerConfig planner_config;
+    planner_config.obstacle_block_probability = 0.995f;
+    planner_config.probability_weight = 40.0f;
+    AStarPlanner planner(octree, planner_config);
+    const AStarPath baseline = planner.findPathByNodeIndex(start, goal);
+    assert(baseline.success);
+
+    octree.assignLeafLabel(high_risk, VoxelLabel::Free, 0.90f, 0, false);
+    const AStarPath risky = planner.findPathByNodeIndex(start, goal);
+    assert(risky.success);
+    assert(risky.total_cost > baseline.total_cost);
+}
+
+void testAStarCrossFloorStairPath() {
+    std::vector<Point3D> points;
+    for (int z = 0; z <= 40; ++z) {
+        points.push_back({0.0f, 0.0f, 0.10f * static_cast<float>(z)});
+    }
+
+    OctreeConfig config;
+    config.max_depth = 5;
+    config.stair_max_voxel = 0.5f;
+    config.corridor_max_voxel = 0.5f;
+    config.min_points_to_split = 1;
+    OctreeManager octree(config);
+    octree.initialize(points);
+    labelAllLeaves(octree, VoxelLabel::Stair, 0.18f);
+
+    const int start = findNearestLeafByCenter(octree, {0.0f, 0.0f, 0.0f});
+    const int goal = findNearestLeafByCenter(octree, {0.0f, 0.0f, 4.0f});
+    assert(start >= 0 && goal >= 0 && start != goal);
+
+    AStarPlannerConfig planner_config;
+    planner_config.allow_cross_floor = true;
+    AStarPlanner planner(octree, planner_config);
+    const AStarPath path = planner.findPathByNodeIndex(start, goal);
+    assert(path.success);
+    assert(path.node_indices.front() == start);
+    assert(path.node_indices.back() == goal);
+    bool has_cross_floor = false;
+    for (const PathWaypoint& waypoint : path.waypoints) {
+        has_cross_floor = has_cross_floor || waypoint.is_cross_floor;
+    }
+    assert(has_cross_floor);
+}
+
 int main() {
     testAdaptiveSubdivision();
     testLabelPropagation();
@@ -260,6 +388,9 @@ int main() {
     testLeafFeatureCSVExport();
     testWeakLabelExport();
     testLeafPcaGeometryStats();
+    testAStarSingleFloorPath();
+    testAStarProbabilityIncreasesCost();
+    testAStarCrossFloorStairPath();
     std::cout << "All Octree tests passed." << std::endl;
     return 0;
 }
