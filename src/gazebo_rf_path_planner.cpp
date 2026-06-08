@@ -60,7 +60,7 @@ struct Options {
     bool has_start = false;
     bool has_goal = false;
     int max_depth = 9;
-    int max_points = 120000;
+    int max_points = 50000;
     double plan_hz = 1.0;
     bool once = false;
     float line_width = 0.08f;
@@ -85,7 +85,7 @@ void printUsage(const char* program) {
         << "  --start X,Y,Z             Path start position in world coordinates\n"
         << "  --goal X,Y,Z              Path goal position in world coordinates\n"
         << "  --max-depth N             Octree max depth, default 9\n"
-        << "  --max-points N            Max input points used per planning frame, default 120000\n"
+        << "  --max-points N            Max input points used per planning frame, default 50000\n"
         << "  --plan-hz HZ              Max planning frequency, default 1\n"
         << "  --line-width M            Path line width in Gazebo, default 0.08\n"
         << "  --once                    Plan once on first received cloud and exit\n"

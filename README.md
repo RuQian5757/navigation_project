@@ -1,55 +1,313 @@
 # navigation_project
 
-本專案是「基於 Octree 與機器學習的室內多樓層 3D 點雲導航優化」的大學專題實作。
+本專案是「基於 Octree 與機器學習的室內多樓層 3D 點雲導航優化」的大學專題實作。核心流程是從 Gazebo 產生帶語義標籤的 3D 點雲，建立導航用 adaptive Octree，輸出 Random Forest 訓練資料，再將 RF 模型接回 Octree 與 A*，最後在 Gazebo 中顯示跨樓層路徑。
 
-目前主線功能是：
+## 快速開始
 
-- Gazebo Sim 內產生室內場景 ground-truth 3D 點雲
-- 透過 Gazebo Transport 發布 `/world/dynamic_cloud`
-- C++ `OctreeManager` 建立導航用 Linear Octree
-- Headless feature exporter 輸出 leaf voxel CSV 給 Random Forest 訓練
-- PCLVisualizer 即時顯示 Octree voxel 切割結果
-- Gazebo topic 內已包含 rule-based semantic label、obstacle probability 與 entity id
-- Random Forest `.rf.txt` 模型可接回 Octree，產生 RF predicted leaf label 與 obstacle probability
-- RF predicted Octree 可直接交給 A*，並用 Gazebo marker 在 simulation 中畫出路徑
+建置主程式、Gazebo plugin、feature exporter、A* planner：
 
-完整流程與參數說明請看：
+```bash
+mkdir -p build
+cmake -S . -B build
+cmake --build build --target dynamic_world_cloud_plugins
+cmake --build build --target leaf_feature_exporter_gazebo
+cmake --build build --target rf_octree_path_planner_gazebo
+cmake --build build --target test_octree
+```
 
-- [docs/project_workflow.md](docs/project_workflow.md)
-- [docs/octree_design.md](docs/octree_design.md)
-- [dynamic_world_cloud/README.md](dynamic_world_cloud/README.md)
+建置 Octree / pointcloud viewer：
 
-## 專案結構
+```bash
+cmake -S scripts -B build/octree_viewer
+cmake --build build/octree_viewer
+```
+
+啟動 Gazebo：
+
+```bash
+./scripts/run_gazebo.sh gazebo/maps/warehouse_world.sdf -r -v 2
+```
+
+另一個 terminal 顯示 Octree：
+
+```bash
+./scripts/run_visualization.sh octree
+```
+
+訓練資料輸出：
+
+```bash
+FEATURE_TRAIN=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
+venv/bin/python3 python/train_model.py
+```
+
+啟動 predict world 並在 Gazebo 中畫 RF Octree A* 路徑：
+
+```bash
+./scripts/run_predict_with_path.sh
+```
+
+詳細流程請看 [docs/project_workflow.md](docs/project_workflow.md)。Octree 與 A* 設計請看 [docs/octree_design.md](docs/octree_design.md)。
+
+## 系統資料流
 
 ```text
-include/octree_manager.h              Octree API 與資料結構
-include/leaf_feature_exporter.h       Leaf feature CSV export API
-include/random_forest_voxel_predictor.h C++ Random Forest 推論 API
-include/astar_planner.h               Octree A* path planner API
-src/octree_manager.cpp                Octree 核心實作
-src/leaf_feature_exporter.cpp         Random Forest leaf feature 輸出
-src/random_forest_voxel_predictor.cpp C++ Random Forest text model 推論
-src/astar_planner.cpp                 label / probability aware A* planner
-src/gazebo_leaf_feature_exporter.cpp  Gazebo topic -> Octree -> CSV
-src/gazebo_rf_path_planner.cpp        Gazebo topic -> RF Octree -> A* -> Marker
-dynamic_world_cloud/RFOctreePathPlanner.cc Gazebo plugin -> RF Octree -> A* -> visual cylinders
-python/train_model.py                 Random Forest 訓練與模型輸出
-tests/test_octree.cpp                 Octree 單元測試
-dynamic_world_cloud/                  Gazebo system plugin
-gazebo/maps/warehouse_world.sdf       測試用室內倉庫世界
-gazebo/maps/warehouse_predict_world.sdf RF/predict 測試世界
-scripts/visualize_octree_gazebo.cpp   即時 Gazebo Octree viewer
-scripts/visualize_pointcloud_realtime.py Python 即時點雲 viewer
-scripts/run_gazebo.sh                 Gazebo simulation 啟動腳本
-scripts/run_visualization.sh          Octree / pointcloud 共用啟動腳本
-scripts/run_visualization_rf.sh       RF 標記 Octree viewer 啟動腳本
-scripts/run_path_planning.sh          外部 RF Octree + A* debug planner
-scripts/run_predict_with_path.sh      一次啟動 predict world 與 RF A* 路徑
-scripts/run_feature_export.sh         Gazebo leaf feature CSV 共用底層腳本
-scripts/run_feature_export_predict.sh 產生模型評估用 predict feature CSV
-scripts/run_feature_export_rf.sh      產生 RF 已推論 feature CSV
-docs/                                 設計與操作文件
+Gazebo world / collision geometry
+  -> DynamicWorldCloud plugin
+  -> /world/dynamic_cloud (PointCloudPacked)
+     fields: xyz, label, obstacle_probability, entity_id
+
+資料集產生:
+  /world/dynamic_cloud
+  -> gazebo_leaf_feature_exporter
+  -> OctreeManager
+  -> leaf_feature_exporter
+  -> data/train_leaf_features.csv 或 data/leaf_features.csv
+
+模型訓練:
+  data/train_*.csv
+  -> python/train_model.py
+  -> models/random_forest_voxel_model.pkl
+  -> models/random_forest_voxel_model.rf.txt
+
+RF 推論 / 導航:
+  /world/dynamic_cloud
+  -> OctreeManager + RandomForestVoxelPredictor
+  -> RF predicted leaf label / obstacle_probability
+  -> AStarPlanner
+  -> Gazebo visual-only path cylinders
+
+視覺化:
+  /world/dynamic_cloud
+  -> visualize_octree_gazebo
+  -> Gazebo semantic Octree 或 RF predicted Octree
+  -> PCLVisualizer
 ```
+
+## 主要檔案
+
+```text
+include/octree_manager.h                 Octree API 與節點資料結構
+src/octree_manager.cpp                   Linear adaptive Octree 實作
+include/astar_planner.h                  A* 參數與 path waypoint API
+src/astar_planner.cpp                    RF probability / stair aware A*
+include/leaf_feature_exporter.h          Leaf CSV feature export API
+src/leaf_feature_exporter.cpp            leaf -> Random Forest feature CSV
+src/gazebo_leaf_feature_exporter.cpp     /world/dynamic_cloud -> Octree -> CSV
+include/random_forest_voxel_predictor.h  C++ RF text model predictor
+src/random_forest_voxel_predictor.cpp    .rf.txt model loading / inference
+python/train_model.py                    Random Forest 訓練與報告輸出
+dynamic_world_cloud/DynamicWorldCloud.cc Gazebo 點雲與 semantic publisher
+dynamic_world_cloud/RFOctreePathPlanner.cc Gazebo 內 RF Octree + A* + path visual
+scripts/visualize_octree_gazebo.cpp      PCL 即時 Octree viewer
+scripts/visualize_pointcloud_realtime.py Python 原始點雲 viewer
+src/octree_performance_benchmark.cpp     semantic Octree vs RF Octree 效能量測
+gazebo/maps/warehouse_world.sdf          訓練 / semantic 測試世界
+gazebo/maps/warehouse_predict_world.sdf  RF predict 與 A* 展示世界
+```
+
+## 常用腳本
+
+`scripts/run_gazebo.sh`
+
+啟動 Gazebo 並設定 plugin / model path。預設 `GZ_PARTITION=dynamic_cloud_test`。
+
+```bash
+./scripts/run_gazebo.sh gazebo/maps/warehouse_world.sdf -r -v 2
+./scripts/run_gazebo.sh gazebo/maps/warehouse_predict_world.sdf -r -v 2
+```
+
+`scripts/run_visualization.sh`
+
+共用 viewer 入口：
+
+```bash
+./scripts/run_visualization.sh octree      # Gazebo semantic Octree
+./scripts/run_visualization.sh octree-rf   # RF predicted Octree
+./scripts/run_visualization.sh pointcloud  # 原始點雲
+```
+
+展示時常用輕量參數：
+
+```bash
+OCTREE_VOXEL_MODE=center-boxes \
+OCTREE_HIDE_POINTS=1 \
+OCTREE_MAX_VOXELS=3000 \
+OCTREE_MAX_RENDER_POINTS=40000 \
+OCTREE_REBUILD_HZ=0.5 \
+./scripts/run_visualization.sh octree
+```
+
+`scripts/run_feature_export.sh`
+
+底層 CSV exporter。常用 wrapper：
+
+```bash
+FEATURE_TRAIN=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
+./scripts/run_feature_export_predict.sh
+./scripts/run_feature_export_rf.sh
+```
+
+`scripts/run_predict_with_path.sh`
+
+啟動 `warehouse_predict_world.sdf`。該 world 內已載入 `RFOctreePathPlanner` plugin，會自動建 RF Octree、執行 A*，並在 Gazebo GUI 畫 cyan 路徑線。
+
+```bash
+./scripts/run_predict_with_path.sh
+```
+
+`scripts/run_path_planning.sh`
+
+外部 debug planner，功能和 Gazebo plugin 類似，但路徑用 Gazebo marker topic 發布。主要用來看 console log 與快速調 PATH_* 參數。
+
+```bash
+./scripts/run_path_planning.sh
+```
+
+`scripts/run_performance_benchmark.sh`
+
+訂閱同一個 Gazebo point cloud frame，依序比較 semantic Octree + A* 與 RF Octree + A* 的建構時間、規劃時間、expanded nodes、path cost 與 speedup。
+
+```bash
+./scripts/run_performance_benchmark.sh
+venv/bin/python3 python/analyze_performance.py
+```
+
+輸出：
+
+```text
+data/performance_benchmark.csv
+data/performance_summary.json
+data/performance_summary.md
+data/performance_summary.png
+data/performance_improvement_table.png
+data/poster_performance_chart.png
+data/poster_performance_table.png
+```
+
+`performance_summary.md` 會產生可直接放進報告的表格，包含 RF 相對 semantic / baseline Octree 的總時間、建構時間、A* 規劃時間、expanded nodes、path cost、latency saved 與 speedup。
+
+海報建議優先使用 `poster_performance_chart.png` 和 `poster_performance_table.png`。前者是純長條圖版，後者是高對比表格版。
+
+```bash
+venv/bin/python3 python/analyze_performance.py
+```
+
+## 重要參數
+
+### DynamicWorldCloud
+
+位置：`gazebo/maps/*.sdf`
+
+- `point_spacing`：collision geometry 取樣間距，越小點越密。
+- `update_rate`：點雲發布 Hz。
+- `max_points_per_publish`：每包 topic 最多點數。目前展示世界回到 `50000`。
+- `transport_topic`：預設 `/world/dynamic_cloud`。
+- `pcd_save_interval`：大於 0 時定期輸出 PCD。
+
+### Feature Exporter
+
+- `FEATURE_TRAIN=1`：輸出檔名前綴 `train_`。
+- `FEATURE_ONCE=1`：收到第一包 cloud 後輸出一次就結束。
+- `FEATURE_MAX_POINTS`：每次輸出最多使用點數。
+- `FEATURE_RF_MODEL`：載入 `.rf.txt`，輸出 RF predicted label / probability。
+- `FEATURE_STORY_HEIGHT=4`、`FEATURE_FLOOR_SURFACE_OFFSET=1`：多樓層高度模型。
+
+### Octree Viewer
+
+- `OCTREE_VOXEL_MODE`：`centers`、`boxes`、`hybrid`、`center-boxes`。
+- `OCTREE_HIDE_POINTS=1`：只看 voxel，不顯示白色原始點雲。
+- `OCTREE_COLOR_MODE=probability`：依 obstacle probability 上色。
+- `OCTREE_RF_MODEL`：載入 RF 模型顯示 predicted Octree。
+- Stair / cross-floor voxel 會優先顯示亮紫紅色，方便辨識樓梯。
+
+### A* / Path Planning
+
+位置：`warehouse_predict_world.sdf` 或 `scripts/run_path_planning.sh` 的 `PATH_*`。
+
+- `start` / `goal` 或 `PATH_START` / `PATH_GOAL`：世界座標。
+- `block_probability`：高於此 obstacle probability 視為不可通行。
+- `probability_weight`：越高越避開高風險 voxel。
+- `stair_connection_radius`：樓梯 virtual connector 半徑。
+- `constrain_stair_transitions`：限制只能在樓梯端點進出。
+- `constrain_stair_direction`：限制從樓梯正確面向進出，降低側邊上樓。
+- `max_non_stair_vertical_step`：非樓梯 voxel 可允許的最大 Z 差，避免穿地板。
+- `constrain_stair_exits_to_floor_levels`：樓梯只能在已知樓層高度附近進出。
+- `stair_floor_exit_tolerance`：距離樓層高度多少以內可進出樓梯。
+
+### Performance Benchmark
+
+- `BENCHMARK_FRAMES`：量測幾包 point cloud。
+- `BENCHMARK_MAX_POINTS`：每包最多使用點數，預設 `50000`。
+- `BENCHMARK_OUTPUT`：CSV 輸出路徑。
+- `BENCHMARK_RF_MODEL`：C++ `.rf.txt` 模型。
+- `PATH_*`：benchmark 會沿用 path planner 的起終點與 A* 參數。
+
+CSV 會有兩種 mode：
+
+```text
+semantic_octree_astar
+rf_octree_astar
+```
+
+報告時建議比較：
+
+- `build_ms`
+- `plan_ms`
+- `total_ms`
+- `expanded_nodes`
+- `path_cost`
+- `planning_hz`
+- `total_speedup`
+- `plan_speedup`
+- `latency_saved_ms`
+- `path_success`
+
+目前多樓層高度模型：
+
+```text
+floor_z = 0
+story_height = 4
+floor_surface_offset = 1
+合法樓層表面約為 z = 1, 5, 9, ...
+```
+
+## Random Forest 訓練與推論
+
+1. 啟動 Gazebo。
+2. 輸出訓練 CSV：
+
+```bash
+FEATURE_TRAIN=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
+```
+
+3. 可另外輸出 predict reference CSV：
+
+```bash
+PREDICT_FEATURE_ONCE=1 ./scripts/run_feature_export_predict.sh
+```
+
+4. 訓練模型：
+
+```bash
+venv/bin/python3 python/train_model.py
+```
+
+`train_model.py` 會讀取：
+
+- `data/train_*.csv` 作為訓練資料。
+- `data/` 中非 `train_`、非 `predicted_` 開頭的 CSV 作為 predict / evaluation 資料。
+
+輸出：
+
+```text
+models/random_forest_voxel_model.pkl
+models/random_forest_voxel_model.rf.txt
+models/random_forest_voxel_report.json
+data/predicted_*.csv
+```
+
+`.pkl` 給 Python 使用，`.rf.txt` 給 C++ viewer / exporter / planner 使用。
 
 ## 依賴
 
@@ -65,275 +323,13 @@ sudo apt install \
   libpcl-dev
 ```
 
-## 建置
+Python 訓練與 pointcloud viewer 依照 `python/train_model.py` 與 `scripts/visualize_pointcloud_realtime.py` 使用的套件安裝到 `venv`。
 
-主專案與 Gazebo plugin：
-
-```bash
-mkdir -p build
-cmake -S . -B build
-cmake --build build --target navigation_octree
-cmake --build build --target test_octree
-cmake --build build --target dynamic_world_cloud_plugins
-cmake --build build --target leaf_feature_exporter_gazebo
-cmake --build build --target rf_octree_path_planner_gazebo
-```
-
-Octree viewer：
-
-```bash
-cmake -S scripts -B build/octree_viewer
-cmake --build build/octree_viewer
-```
-
-測試：
+## 驗證
 
 ```bash
 ./build/test_octree
+gz sdf --check gazebo/maps/warehouse_predict_world.sdf
 ```
 
-## 快速執行
-
-Terminal 1：啟動 Gazebo simulation。
-
-```bash
-./scripts/run_gazebo.sh gazebo/maps/warehouse_world.sdf -s -r -v 2
-```
-
-Terminal 2：啟動即時 Octree 視覺化。
-
-```bash
-./scripts/run_visualization.sh octree
-```
-
-Terminal 2 也可以改成輸出 Random Forest 訓練 CSV，不需要開 viewer：
-
-```bash
-FEATURE_TRAIN=1 ./scripts/run_feature_export.sh
-```
-
-預設會訂閱 `/world/dynamic_cloud`，每秒最多重建一次 Octree，並輸出：
-
-```text
-data/train_leaf_features.csv
-```
-
-訓練 Random Forest model：
-
-```bash
-venv/bin/python3 python/train_model.py
-```
-
-預設會讀取 `data/train_*.csv` 作為訓練資料，並自動將 `data/` 中非 `train_`、非 `predicted_` 開頭的 CSV 當作待預測資料，例如 `data/leaf_features.csv`。輸出：
-
-```text
-models/random_forest_voxel_model.pkl
-models/random_forest_voxel_model.rf.txt
-models/random_forest_voxel_report.json
-data/predicted_leaf_features.csv
-```
-
-將訓練好的模型套回 Octree 建構流程：
-
-```bash
-./scripts/run_feature_export_rf.sh
-./scripts/run_visualization_rf.sh
-```
-
-`.pkl` 主要給 Python 使用；`.rf.txt` 是 C++17 exporter / viewer / `OctreeManager::setMLPredictor()` 使用的輕量模型格式。
-
-若要視覺化比較理想標記與 RF 預測，可開兩個 viewer：
-
-```bash
-./scripts/run_visualization.sh octree
-./scripts/run_visualization_rf.sh
-```
-
-第一個使用 Gazebo semantic label，第二個使用 RF 預測後的 leaf label / probability。
-
-若要產生一份給 `python/train_model.py` 評估 accuracy 的 predict feature CSV，使用：
-
-```bash
-./scripts/run_feature_export_predict.sh
-```
-
-這份資料的 `label` / `obstacle_probability` 仍來自 Gazebo semantic 欄位，供模型預測結果比對。
-
-如果畫面太卡，改用較輕量模式：
-
-```bash
-OCTREE_VOXEL_MODE=centers \
-OCTREE_MAX_VOXELS=3000 \
-OCTREE_MAX_RENDER_POINTS=40000 \
-OCTREE_REBUILD_HZ=0.5 \
-./scripts/run_visualization.sh octree
-```
-
-若只想看原始 pointcloud：
-
-```bash
-./scripts/run_visualization.sh pointcloud
-```
-
-## RF Octree A* 路徑顯示
-
-啟動 predict world。`warehouse_predict_world.sdf` 會自動載入 `RFOctreePathPlanner` plugin，從 `/world/dynamic_cloud` 建 RF Octree、執行 A*，並把路徑畫成 cyan visual-only cylinders。
-
-```bash
-./scripts/run_gazebo.sh gazebo/maps/warehouse_predict_world.sdf -r -v 2
-```
-
-起點 / 終點對應 `warehouse_predict_world.sdf` 裡的 visual-only `start_marker` / `goal_marker`：
-
-```text
-start = 6, -2, 1.2
-goal  = 0,  0, 9.2
-```
-
-`start_marker` / `goal_marker` 只有 visual、沒有 collision，因此不會被 `DynamicWorldCloud` 取樣，也不會被 Octree 誤判成障礙物。
-
-也可以用單一腳本啟動 predict world：
-
-```bash
-./scripts/run_predict_with_path.sh
-```
-
-要看到路徑線，Gazebo 必須是 GUI 模式；不要加 `-s` server-only。`scripts/run_path_planning.sh` 仍保留給 debug，它會以外部節點方式跑同一套 planner。
-
-## Gazebo 點雲資料流
-
-目前 `warehouse_world.sdf` 會載入 `DynamicWorldCloud` plugin。
-
-Plugin 會：
-
-1. 掃描 world 內的 collision geometry。
-2. 依照 `point_spacing` 取樣成 local point cloud；mesh 會沿 triangle surface 取樣，不只取 vertices。
-3. 將 local cloud cache 起來。
-4. 在 `PostUpdate()` 依照 `update_rate` 轉成 world coordinates。
-5. 發布帶語義欄位的 `gz::msgs::PointCloudPacked` 到 `/world/dynamic_cloud`。
-6. `leaf_feature_exporter_gazebo` 可訂閱 topic，轉成 `std::vector<navigation::PointCloudSample>`。
-7. `OctreeManager` 建立 Octree，計算 leaf PCA / normal / density 等特徵。
-8. `leaf_feature_exporter` 將 leaf features 輸出成 CSV。
-9. Viewer 也可同時訂閱同一個 topic，獨立負責 PCLVisualizer 顯示。
-10. `rf_octree_path_planner_gazebo` 可訂閱同一 topic，建立 RF predicted Octree、執行 A*，並發布 Gazebo marker line strip。
-
-## 常用視覺化模式
-
-只看 voxel center，速度最快：
-
-```bash
---no-points --voxel-mode centers
-```
-
-看 voxel center 加上體積邊框，適合展示：
-
-```bash
---no-points --voxel-mode center-boxes --max-voxels 2000
-```
-
-保留原始點雲形狀，同時顯示少量 voxel box：
-
-```bash
---voxel-mode hybrid
-```
-
-完整 wireframe voxel，最直觀但較卡：
-
-```bash
---voxel-mode boxes --max-voxels 1000
-```
-
-## 重要參數
-
-Gazebo plugin 參數在 [gazebo/maps/warehouse_world.sdf](gazebo/maps/warehouse_world.sdf)：
-
-- `point_spacing`：collision 幾何取樣密度。
-- `update_rate`：點雲發布頻率。
-- `max_points_per_publish`：每次最多發布點數，設為 `0` 代表不限制。
-- `transport_topic`：目前為 `/world/dynamic_cloud`。
-- `pcd_save_interval`：是否定期輸出 PCD。
-
-Viewer 參數：
-
-- `--partition`：Gazebo Transport partition，需和 Gazebo 相同。
-- `--topic`：訂閱 topic，預設 `/world/dynamic_cloud`。
-- `--max-depth`：Octree 最大深度。
-- `--max-voxels`：最多顯示多少 leaf voxel。
-- `--max-render-points`：viewer 端最多使用多少點建 Octree。
-- `--rebuild-hz`：每秒最多重建與刷新幾次。
-- `--voxel-mode`：`centers`、`boxes`、`hybrid`、`center-boxes`。
-- `--no-points`：不顯示原始白色點雲。
-- `--color-mode`：`depth`、`label`、`probability`，預設由 `scripts/run_visualization.sh` 設為 `probability`。
-- `--probability-color`：依 `obstacle_probability` 上色，越接近 1 越醒目。
-- `--label-color`：用語義 label 上色，而不是 Octree depth。
-- `--rf-model`：載入 `python/train_model.py` 產生的 `.rf.txt`，在建構 Octree leaf 後用模型覆寫 `label` 與 `obstacle_probability`。
-- `OCTREE_WINDOW_TITLE`：透過腳本設定 viewer 視窗標題，方便 ideal / RF 視窗並排比較。
-- `OCTREE_RF_MODEL`：`run_visualization_rf.sh` 使用的 RF model 路徑，預設 `models/random_forest_voxel_model.rf.txt`。
-
-Stair / cross-floor voxel 在所有 color mode 下都會優先顯示為亮紫紅色，避免樓梯因低 obstacle probability 而不明顯。
-
-Feature exporter 參數：
-
-- `--partition`：Gazebo Transport partition，需和 Gazebo 相同。
-- `--topic`：訂閱 topic，預設 `/world/dynamic_cloud`。
-- `--output`：CSV 輸出路徑，預設 `data/leaf_features.csv`。
-- `--max-depth`：特徵輸出使用的 Octree 最大深度。
-- `--max-points`：每次輸出最多使用多少收到的點。
-- `--export-hz`：每秒最多重建 Octree 並輸出 CSV 幾次。
-- `--weak-labels`：不用 Gazebo semantic 欄位，改用 exporter 端規則覆寫 `label` 與 `obstacle_probability`。
-- `--rf-model`：載入 `python/train_model.py` 產生的 `.rf.txt`，讓輸出 CSV 使用模型推論後的 leaf label 與 probability。
-- `--train`：輸出 CSV 檔名自動加上 `train_` 前綴，例如 `train_leaf_features.csv`。
-- `--floor-z`：第 0 層樓的 z 原點。
-- `--story-height`：樓層週期高度，預設 `4`。
-- `--floor-surface-offset`：每層樓內可通行地板面的局部 z offset。
-- `--ceiling-offset`：每層樓內天花板局部 z offset，腳本預設 `4`。
-- `--once`：收到第一包點雲後輸出一次就結束。
-- `--timestamped`：每次輸出成獨立檔案，不覆蓋前一份 CSV。
-- `PREDICT_FEATURE_*`：`run_feature_export_predict.sh` 的輸出、頻率與抽樣參數。
-- `RF_FEATURE_*`：`run_feature_export_rf.sh` 的模型、輸出、頻率與抽樣參數。
-
-Path planner 參數：
-
-- `PATH_START` / `PATH_GOAL`：世界座標 `X,Y,Z`，預設 `6,-2,1.2` 與 `0,0,9.2`。
-- `PATH_RF_MODEL`：C++ `.rf.txt` 模型路徑。
-- `PATH_PLAN_HZ`：每秒最多重建 RF Octree 與重新規劃幾次。
-- `PATH_MAX_DEPTH` / `PATH_MAX_POINTS`：Octree 深度與每 frame 使用點數上限。
-- `PATH_BLOCK_PROBABILITY`：高於此 RF 障礙概率的 leaf 視為不可通行。
-- `PATH_PROBABILITY_WEIGHT`：越高越避開高風險 voxel。
-- `PATH_ALLOW_CROSS_FLOOR`：`1` 允許樓梯跨樓層，`0` 禁止。
-- `PATH_ENDPOINT_SNAP_RADIUS`：起點/終點若落在不可通行 leaf，搜尋半徑內最近可通行 leaf。
-- `PATH_STAIR_CONNECTION_RADIUS`：樓梯附近的 virtual connector 半徑，用來補足不同 voxel 深度造成的樓梯連通斷裂。
-- `PATH_LINE_WIDTH`：Gazebo marker 路徑線寬。
-
-一般操作建議優先改 [scripts/run_visualization.sh](scripts/run_visualization.sh) 上方的參數設定區，或用環境變數覆寫，例如：
-
-```bash
-OCTREE_MAX_VOXELS=1000 ./scripts/run_visualization.sh octree
-POINTCLOUD_POINT_SIZE=2 ./scripts/run_visualization.sh pointcloud
-PREDICT_FEATURE_EXPORT_HZ=0.5 PREDICT_FEATURE_TIMESTAMPED=1 ./scripts/run_feature_export_predict.sh
-FEATURE_TRAIN=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
-FEATURE_WEAK_LABELS=1 FEATURE_ONCE=1 ./scripts/run_feature_export.sh
-```
-
-## 狀態與後續工作
-
-已完成：
-
-- Gazebo collision geometry ground-truth cloud plugin
-- `/world/dynamic_cloud` Gazebo Transport 資料流
-- Linear Octree 與 adaptive voxel sizing
-- Leaf PCA / avg_normal / Random Forest feature CSV export
-- Gazebo topic headless feature exporter
-- PCL 即時 Octree 視覺化
-- Gazebo semantic point fields：`label`、`obstacle_probability`、`entity_id`
-- 樓梯 voxel 高亮與 cross-floor flag
-- Random Forest 訓練腳本 `python/train_model.py`
-- C++ Random Forest predictor 與 RF predicted Octree viewer
-- predict / RF CSV 輸出腳本
-- A* planner：使用 leaf label、obstacle probability、stair / cross-floor 資訊計算路徑
-
-後續可擴充：
-
-- 自動 room id 標記
-- 將 A* path waypoint 發布成 Gazebo marker / line strip plugin
-- Hybrid A* path planner
+Gazebo 的 inertia warning 來自部分 mesh model 的慣性設定，world 仍可載入；若只做靜態導航展示，不影響點雲 topic 與 Octree pipeline。

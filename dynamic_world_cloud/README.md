@@ -1,58 +1,40 @@
-# DynamicWorldCloud
+# DynamicWorldCloud Gazebo Plugins
 
-Gazebo Sim Harmonic (`gz-sim8`) system plugin that generates a dynamic
-ground-truth point cloud from world collision geometry.
+本資料夾包含兩個 Gazebo Sim system plugin：
 
-## Features
+- `DynamicWorldCloud`：從 world collision geometry 產生帶語義欄位的 point cloud。
+- `RFOctreePathPlanner`：訂閱 point cloud，建立 RF predicted Octree，執行 A*，並在 Gazebo 中畫出路徑。
 
-- Implements `ISystemConfigure` and `ISystemPostUpdate`
-- Traverses the world as Model -> Link -> Collision
-- Supports box, cylinder, sphere, mesh, and finite plane collision geometry
-- Samples each local collision cloud once, then only transforms cached points
-- Uses `gz::common::MeshManager` for mesh loading and triangle-surface sampling
-- Publishes `gz::msgs::PointCloudPacked` on `/world/dynamic_cloud`
-- Publishes semantic fields per point: `label`, `obstacle_probability`, `entity_id`
-- Saves binary PCD snapshots every configured interval
-- Detects spawned and deleted entities during simulation
-- Preserves full XYZ coordinates for multi-floor navigation
-- Exposes `GetCurrentPointCloud()` as `const pcl::PointCloud<pcl::PointXYZ>&`
-- Companion `RFOctreePathPlanner` plugin builds an RF Octree, runs A*, and
-  renders the path as visual-only cylinders
+## Build
 
-## Dependencies
-
-Ubuntu 24.04 / Gazebo Harmonic:
+從專案根目錄：
 
 ```bash
-sudo apt install libgz-sim8-dev libgz-common5-dev libgz-plugin2-dev libpcl-dev
+cmake -S . -B build
+cmake --build build --target dynamic_world_cloud_plugins
+cmake --build build --target rf_octree_path_planner_gazebo
 ```
 
-## Build With CMake
+輸出：
 
-From the repository root:
+```text
+build/dynamic_world_cloud/libDynamicWorldCloud.so
+build/dynamic_world_cloud/libRFOctreePathPlanner.so
+build/rf_octree_path_planner_gazebo
+```
+
+啟動 world 時建議使用：
 
 ```bash
-mkdir -p build
-cd build
-cmake ..
-cmake --build . --target dynamic_world_cloud_plugins
+./scripts/run_gazebo.sh gazebo/maps/warehouse_world.sdf -r -v 2
+./scripts/run_gazebo.sh gazebo/maps/warehouse_predict_world.sdf -r -v 2
 ```
 
-The plugin target builds:
+`run_gazebo.sh` 會設定 `GZ_PLUGIN_PATH`、`GZ_SIM_SYSTEM_PLUGIN_PATH`、`GZ_SIM_RESOURCE_PATH` 與本地模型搜尋路徑。
 
-- `build/dynamic_world_cloud/libDynamicWorldCloud.so`
-- `build/dynamic_world_cloud/libRFOctreePathPlanner.so`
+## DynamicWorldCloud
 
-## Build With colcon
-
-From the workspace root containing this package:
-
-```bash
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
-source install/setup.bash
-```
-
-## SDF Loading Example
+SDF 範例：
 
 ```xml
 <plugin filename="DynamicWorldCloud" name="DynamicWorldCloud">
@@ -66,38 +48,158 @@ source install/setup.bash
 </plugin>
 ```
 
-Predict world path planning plugin example:
+功能：
+
+- 掃描 world 的 Model -> Link -> Collision。
+- 支援 box、cylinder、sphere、finite plane、mesh collision。
+- Mesh 使用 `gz::common::MeshManager` 讀取 triangle surface 並依 `point_spacing` 取樣。
+- 每個 collision 的 local cloud 只建立一次並 cache。
+- `PostUpdate()` 時根據 entity pose 轉換到 world coordinates。
+- 支援 simulation 中新增 / 刪除 entity 時更新 cache。
+- 發布 `gz::msgs::PointCloudPacked` 到 `/world/dynamic_cloud`。
+
+PointCloudPacked 欄位：
+
+```text
+xyz: FLOAT32 x 3
+label: UINT32
+obstacle_probability: FLOAT32
+entity_id: UINT32
+point_step: 24 bytes
+frame: world
+```
+
+semantic label：
+
+```text
+0 = free
+1 = obstacle
+2 = stair
+```
+
+目前 rule-based semantic 規則：
+
+- 名稱含 `floor` / `ground`，或 geometry 是 plane：free。
+- 否則，名稱含 `stair`：stair。
+- 其他 collision：obstacle。
+
+floor 判斷優先於 stair，避免帶有 stair 字樣的樓板模型被整片標成樓梯。
+
+重要參數：
+
+| 參數 | 說明 |
+| --- | --- |
+| `point_spacing` | collision surface 取樣間距，越小越細 |
+| `update_rate` | 發布 Hz |
+| `max_points_per_publish` | topic 每包最多點數，0 代表不限制 |
+| `pcd_save_interval` | PCD 輸出週期，0 代表不輸出 |
+| `transport_topic` | 發布 topic，預設 `/world/dynamic_cloud` |
+
+## RFOctreePathPlanner
+
+SDF 範例：
 
 ```xml
 <plugin filename="RFOctreePathPlanner" name="RFOctreePathPlanner">
   <transport_topic>/world/dynamic_cloud</transport_topic>
   <rf_model>models/random_forest_voxel_model.rf.txt</rf_model>
-  <start>0,-5,1.2</start>
+  <start>6,-2,1.2</start>
   <goal>0,0,9.2</goal>
+  <max_depth>9</max_depth>
+  <max_points>50000</max_points>
+  <plan_hz>0.1</plan_hz>
+  <line_radius>0.06</line_radius>
+  <z_offset>0.10</z_offset>
+  <block_probability>0.92</block_probability>
+  <probability_weight>6</probability_weight>
+  <vertical_weight>0.75</vertical_weight>
+  <allow_cross_floor>true</allow_cross_floor>
+  <stair_connection_radius>1.25</stair_connection_radius>
+  <constrain_stair_transitions>true</constrain_stair_transitions>
+  <constrain_stair_direction>true</constrain_stair_direction>
+  <max_non_stair_vertical_step>0.35</max_non_stair_vertical_step>
+  <constrain_stair_exits_to_floor_levels>true</constrain_stair_exits_to_floor_levels>
+  <stair_floor_exit_tolerance>0.45</stair_floor_exit_tolerance>
+  <floor_z>0</floor_z>
+  <story_height>4</story_height>
+  <floor_surface_offset>1</floor_surface_offset>
 </plugin>
 ```
 
-## Semantic Fields
+資料流：
 
-The published `PointCloudPacked` contains:
+```text
+/world/dynamic_cloud
+  -> parse PointCloudPacked
+  -> OctreeManager + RandomForestVoxelPredictor
+  -> AStarPlanner
+  -> visual-only cylinder path model in Gazebo
+```
 
-- `xyz` as packed `FLOAT32` coordinates
-- `label` as `UINT32`: `0=free`, `1=obstacle`, `2=stair`
-- `obstacle_probability` as `FLOAT32`
-- `entity_id` as `UINT32`
+這個 plugin 不讀 CSV。RF 模型來自：
 
-Current label inference is rule based:
+```text
+models/random_forest_voxel_model.rf.txt
+```
 
-- scoped collision name containing `floor` / `ground`, or plane geometry -> free
-- otherwise, scoped collision name containing `stair` -> stair
-- all other collision geometry -> obstacle
-
-Floor semantics intentionally take priority over stair semantics, so a floor
-model that describes stair access is not labeled as a stair surface.
-
-When launching from this repository without installation, use:
+該模型由：
 
 ```bash
-cmake --build build --target dynamic_world_cloud_plugins
-./scripts/run_gazebo.sh gazebo/maps/warehouse_world.sdf
+venv/bin/python3 python/train_model.py
+```
+
+產生。
+
+Path visual 是 Gazebo model / visual cylinder，不依賴 marker GUI plugin。若要看見路徑，必須使用 Gazebo GUI，不要使用 `-s` server-only。
+
+### A* 重要參數
+
+| 參數 | 說明 |
+| --- | --- |
+| `start` / `goal` | world coordinate 起點 / 終點 |
+| `max_points` | 每次規劃最多使用點數，目前 predict world 為 50000 |
+| `plan_hz` | 最多重建 RF Octree 與規劃頻率 |
+| `block_probability` | leaf obstacle probability 阻擋門檻 |
+| `stair_connection_radius` | stair virtual connector 半徑 |
+| `constrain_stair_transitions` | 只允許在樓梯端點進出 |
+| `constrain_stair_direction` | 只允許從樓梯推估方向進出 |
+| `max_non_stair_vertical_step` | 非樓梯 leaf 最大 Z 跳躍 |
+| `constrain_stair_exits_to_floor_levels` | 樓梯進出必須靠近已知樓層表面 |
+| `stair_floor_exit_tolerance` | 樓層表面高度容忍度 |
+| `floor_z` / `story_height` / `floor_surface_offset` | 多樓層高度模型 |
+
+目前樓層表面公式：
+
+```text
+floor_z + floor_surface_offset + n * story_height
+```
+
+predict world 預設為：
+
+```text
+0 + 1 + n * 4 => z = 1, 5, 9, ...
+```
+
+這些限制是為了避免路徑從樓梯中段離開，或從一般地板 voxel 垂直穿過樓板。
+
+## Debug
+
+確認 topic：
+
+```bash
+GZ_PARTITION=dynamic_cloud_test gz topic -l
+GZ_PARTITION=dynamic_cloud_test gz topic -i -t /world/dynamic_cloud
+```
+
+外部 planner debug：
+
+```bash
+./scripts/run_path_planning.sh
+```
+
+常見調整：
+
+```bash
+PATH_STAIR_FLOOR_EXIT_TOLERANCE=0.55 ./scripts/run_path_planning.sh
+PATH_MAX_NON_STAIR_VERTICAL_STEP=0.25 ./scripts/run_path_planning.sh
 ```

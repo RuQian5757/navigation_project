@@ -113,6 +113,44 @@ Octree 建構時，每個 leaf 會保留該 leaf 內部點集合的幾何統計�
 - A* 的 edge cost 會再加入 probability、stair、cross-floor、vertical movement 權重，讓 RF predicted 風險直接影響路徑。
 - Heuristic 使用 Euclidean distance，並乘上目前 leaf 的 `obstacle_probability` 風險倍率；若跨層但目前不在 stair/cross-floor leaf，也會加入額外 bias，引導搜尋更快靠近樓梯連通區。
 
+### A* 樓梯與樓板約束
+
+目前 A* 不只依賴 label 成本，也加入數個硬限制，避免跨樓層展示時出現「穿地板」或「樓梯走到一半就離開」：
+
+- `max_non_stair_vertical_step`：兩個非樓梯 leaf 之間若 Z 高度差超過此值，edge 直接不可通行。這用來防止 free voxel 直接垂直跳到另一層樓。
+- `constrain_stair_transitions`：free <-> stair 轉換只能發生在 stair component 的低端或高端，避免從樓梯側邊或中段進出。
+- `constrain_stair_direction`：free <-> stair 的移動方向必須符合樓梯推估出的 ascent direction，避免從側面爬上樓梯。
+- `constrain_stair_exits_to_floor_levels`：樓梯進出點必須靠近已知樓層表面高度。
+
+樓層表面高度計算方式：
+
+```text
+floor_surface_z = floor_z + floor_surface_offset + n * story_height
+```
+
+以目前 predict world 為例：
+
+```text
+floor_z = 0
+story_height = 4
+floor_surface_offset = 1
+合法樓層表面約為 z = 1, 5, 9, ...
+```
+
+因此即使 RF 將樓梯切成多個小 stair component，中間 component 的局部 min/max 也不會被誤當成真正樓層出口。只有當 stair leaf 與 free leaf 都接近已知樓層高度時，才允許離開或進入樓梯。
+
+### Path smoothing
+
+`AStarPlanner::smoothWaypoints()` 會移除同方向冗餘 waypoint，但目前保留以下關鍵點：
+
+- label 改變處，例如 free -> stair。
+- `is_cross_floor` 狀態改變處。
+- `room_id` 改變處。
+- 明顯 Z 高度變化處。
+- 任何包含 stair / cross-floor 的三點片段。
+
+這是為了避免 A* 實際節點合法，但顯示 polyline 被過度簡化成一條穿過樓板或牆面的長直線。
+
 ## 文件結構
 
 - `include/octree_manager.h`：Octree API 與資料結構定義。

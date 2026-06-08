@@ -48,7 +48,7 @@ PLANNER_BIN="${PROJECT_ROOT}/build/rf_octree_path_planner_gazebo"
 # Octree and input point limits. Increase only if the route misses important
 # geometry; higher values cost more CPU/RAM.
 : "${PATH_MAX_DEPTH:=9}"
-: "${PATH_MAX_POINTS:=120000}"
+: "${PATH_MAX_POINTS:=50000}"
 
 # A* cost parameters.
 # - PATH_BLOCK_PROBABILITY: leaf probability above this value is treated blocked.

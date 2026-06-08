@@ -62,4 +62,15 @@ target_link_libraries(rf_octree_path_planner_gazebo PRIVATE
     Threads::Threads
 )
 
+add_executable(octree_performance_benchmark
+    src/octree_performance_benchmark.cpp
+)
+
+target_link_libraries(octree_performance_benchmark PRIVATE
+    navigation_octree
+    gz-transport13::gz-transport13
+    gz-msgs10::gz-msgs10
+    Threads::Threads
+)
+
 add_subdirectory(dynamic_world_cloud)
