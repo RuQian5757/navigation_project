@@ -2,6 +2,10 @@
 
 本專案是「基於 Octree 與機器學習的室內多樓層 3D 點雲導航優化」的大學專題實作。核心流程是從 Gazebo 產生帶語義標籤的 3D 點雲，建立導航用 adaptive Octree，輸出 Random Forest 訓練資料，再將 RF 模型接回 Octree 與 A*，最後在 Gazebo 中顯示跨樓層路徑。
 
+## Demo Video
+
+[Watch Demo Video]([https://www.youtube.com/watch?v=xxxxxxxxxxx](https://drive.google.com/file/d/1-dRxy0XI1xdLRo6YUCb_PYV-Iks3zpl-/view?usp=sharing))
+
 ## 快速開始
 
 建置主程式、Gazebo plugin、feature exporter、A* planner：
