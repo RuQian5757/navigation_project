@@ -4,7 +4,7 @@
 
 ## Demo Video
 
-[Watch Demo Video]([https://www.youtube.com/watch?v=xxxxxxxxxxx](https://drive.google.com/file/d/1-dRxy0XI1xdLRo6YUCb_PYV-Iks3zpl-/view?usp=sharing))
+[Watch Demo Video](https://drive.google.com/file/d/1-dRxy0XI1xdLRo6YUCb_PYV-Iks3zpl-/view?usp=sharing)
 
 ## 快速開始
 
